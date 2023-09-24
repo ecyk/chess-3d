@@ -1,10 +1,8 @@
 #include "game.hpp"
 
-#define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
-#include <glad/gl.h>
 
-Game::Game(GLFWwindow* window) : window_{window} {
+Game::Game(GLFWwindow* window) : renderer_{window} {
   glfwSetWindowUserPointer(window, this);
 
   glfwSetCursorPosCallback(window, mouse_callback);
@@ -16,7 +14,7 @@ Game::Game(GLFWwindow* window) : window_{window} {
 
 void Game::run() {
   last_frame_ = static_cast<float>(glfwGetTime());
-  while (glfwWindowShouldClose(window_) != 1) {
+  while (glfwWindowShouldClose(renderer_.get_window()) != 1) {
     const auto current_frame = static_cast<float>(glfwGetTime());
     delta_time_ = current_frame - last_frame_;
     last_frame_ = current_frame;
@@ -26,12 +24,9 @@ void Game::run() {
     process_input();
     update();
 
-    glClearColor(0.25F, 0.25F, 0.25F, 1.0F);
-    glClear(GL_COLOR_BUFFER_BIT);
-
+    renderer_.begin_drawing();
     draw();
-
-    glfwSwapBuffers(window_);
+    renderer_.end_drawing();
   }
 }
 
@@ -40,8 +35,9 @@ void Game::update() {}
 void Game::draw() {}
 
 void Game::process_input() {
-  if (glfwGetKey(window_, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
-    glfwSetWindowShouldClose(window_, 1);
+  GLFWwindow* window = renderer_.get_window();
+  if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+    glfwSetWindowShouldClose(window, 1);
   }
 }
 

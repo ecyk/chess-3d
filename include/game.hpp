@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common.hpp"
+#include "renderer.hpp"
 
 struct GLFWwindow;
 
@@ -16,7 +16,7 @@ class Game {
 
   void process_input();
 
-  GLFWwindow* window_;
+  Renderer renderer_;
 
   float delta_time_{};
   float last_frame_{};

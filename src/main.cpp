@@ -1,3 +1,5 @@
+#include "game.hpp"
+
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #define GLAD_GL_IMPLEMENTATION
@@ -6,8 +8,6 @@
 #include <stb_image.h>
 #define CGLTF_IMPLEMENTATION
 #include <cgltf.h>
-
-#include "game.hpp"
 
 GLFWwindow* glfw_init();
 void glfw_destroy();
