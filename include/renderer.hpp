@@ -5,7 +5,7 @@
 #include <deque>
 #include <glm/gtc/type_ptr.hpp>
 
-#include "common.hpp"
+#include "camera.hpp"
 
 struct GLFWwindow;
 
@@ -91,13 +91,15 @@ class Renderer {
   static void destroy_model(Model* model);
   void draw_model(const Transform& transform, Model* model, Material* material);
 
-  static void begin_drawing();
+  void begin_drawing(Camera& camera);
   void end_drawing();
 
   [[nodiscard]] GLFWwindow* get_window() const { return window_; }
 
  private:
   GLFWwindow* window_{};
+
+  Camera* camera_{};
 
   Shader* bound_shader_{};
   Material* bound_material_{};

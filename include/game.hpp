@@ -1,10 +1,18 @@
 #pragma once
 
+#include "camera.hpp"
 #include "renderer.hpp"
 
 struct GLFWwindow;
 
+inline constexpr glm::vec2 k_window_size{1280, 720};
+
 class Game {
+  static constexpr float k_game_scale{10.0F};
+
+  static constexpr glm::vec3 k_camera_position{0, 4.0F, -4.0F};
+  static constexpr glm::vec3 k_camera_target{};
+
  public:
   explicit Game(GLFWwindow* window);
 
@@ -22,6 +30,11 @@ class Game {
   float last_frame_{};
 
   float time_passed_{};
+
+  Camera camera_{k_camera_position, k_camera_target};
+
+  glm::vec2 mouse_last_position_{k_window_size / 2.0F};
+  bool first_mouse_input_{true};
 
   Shader* shader_{};
 
@@ -45,8 +58,8 @@ class Game {
   static void mouse_button_callback(GLFWwindow* window, int button, int action,
                                     int mods);
   static void mouse_move_callback(GLFWwindow* window, double xpos, double ypos);
+  static void mouse_scroll_callback(GLFWwindow* window, double xoffset,
+                                    double yoffset);
   static void key_callback(GLFWwindow* window, int key, int scancode,
                            int action, int mods);
-  static void scroll_callback(GLFWwindow* window, double xoffset,
-                              double yoffset);
 };

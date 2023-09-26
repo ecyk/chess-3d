@@ -72,8 +72,8 @@ GLFWwindow* glfw_init() {
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
-  GLFWwindow* window{glfwCreateWindow(
-      window_initial_size.x, window_initial_size.y, "Chess", nullptr, nullptr)};
+  GLFWwindow* window{glfwCreateWindow(k_window_size.x, k_window_size.y, "Chess",
+                                      nullptr, nullptr)};
   if (window == nullptr) {
     LOG("GLFW", "Failed to initialize window");
     glfw_destroy();

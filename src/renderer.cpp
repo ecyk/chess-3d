@@ -387,9 +387,7 @@ void Renderer::draw_model(const Transform& transform, Model* model,
   set_shader_uniform(
       bound_shader_, "projection",
       glm::perspective(glm::radians(60.0F), aspect_ratio, 0.1F, 100.0F));
-  set_shader_uniform(bound_shader_, "view",
-                     glm::lookAt(glm::vec3{0.0F, 0.1F, 0.25F},
-                                 {0.0F, 0.05F, 0.0F}, {0.0F, 1.0F, 0.0F}));
+  set_shader_uniform(bound_shader_, "view", camera_->calculate_view_matrix());
   set_shader_uniform(
       bound_shader_, "model",
       glm::scale(
@@ -406,9 +404,13 @@ void Renderer::draw_model(const Transform& transform, Model* model,
   glBindVertexArray(0);
 }
 
-void Renderer::begin_drawing() {
+void Renderer::begin_drawing(Camera& camera) {
   glClearColor(0.25F, 0.25F, 0.25F, 1.0F);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  camera_ = &camera;
 }
 
-void Renderer::end_drawing() { glfwSwapBuffers(window_); }
+void Renderer::end_drawing() {
+  camera_ = nullptr;
+  glfwSwapBuffers(window_);
+}
