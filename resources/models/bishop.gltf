@@ -128,18 +128,6 @@
 		{
 			"sampler":0,
 			"source":5
-		},
-		{
-			"sampler":0,
-			"source":0
-		},
-		{
-			"sampler":0,
-			"source":1
-		},
-		{
-			"sampler":0,
-			"source":2
 		}
 	],
 	"images":[
@@ -178,29 +166,29 @@
 		{
 			"bufferView":0,
 			"componentType":5126,
-			"count":1838,
+			"count":1851,
 			"max":[
-				0.0161648690700531,
-				0.08581218123435974,
-				0.01612257957458496
+				0.16204504668712616,
+				0.85594642162323,
+				0.16125482320785522
 			],
 			"min":[
-				-0.016050374135375023,
-				0,
-				-0.016068585216999054
+				-0.16010738909244537,
+				-0.0021753013134002686,
+				-0.16065682470798492
 			],
 			"type":"VEC3"
 		},
 		{
 			"bufferView":1,
 			"componentType":5126,
-			"count":1838,
+			"count":1851,
 			"type":"VEC3"
 		},
 		{
 			"bufferView":2,
 			"componentType":5126,
-			"count":1838,
+			"count":1851,
 			"type":"VEC2"
 		},
 		{
@@ -213,26 +201,26 @@
 	"bufferViews":[
 		{
 			"buffer":0,
-			"byteLength":22056,
+			"byteLength":22212,
 			"byteOffset":0,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":22056,
-			"byteOffset":22056,
+			"byteLength":22212,
+			"byteOffset":22212,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":14704,
-			"byteOffset":44112,
+			"byteLength":14808,
+			"byteOffset":44424,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":17544,
-			"byteOffset":58816,
+			"byteOffset":59232,
 			"target":34963
 		}
 	],
@@ -244,7 +232,7 @@
 	],
 	"buffers":[
 		{
-			"byteLength":76360,
+			"byteLength":76776,
 			"uri":"bishop.bin"
 		}
 	]
