@@ -6,29 +6,54 @@
 
 #include <fstream>
 
-Renderer::Renderer(GLFWwindow* window) : window_{window} {}
+Renderer::Renderer(GLFWwindow* window) : window_{window} {
+  glGenFramebuffers(1, &picking_texture_.fbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, picking_texture_.fbo);
+
+  int width{};
+  int height{};
+  glfwGetWindowSize(window, &width, &height);
+
+  glGenTextures(1, &picking_texture_.picking);
+  glBindTexture(GL_TEXTURE_2D, picking_texture_.picking);
+
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
+               GL_UNSIGNED_BYTE, nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                         picking_texture_.picking, 0);
+
+  glGenTextures(1, &picking_texture_.depth);
+  glBindTexture(GL_TEXTURE_2D, picking_texture_.depth);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, width, height, 0,
+               GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D,
+                         picking_texture_.depth, 0);
+
+  assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
 
 Renderer::~Renderer() {
+  destroy_picking_texture(&picking_texture_);
+
   for (size_t i = models_.size(); i-- > 0;) {
-    if (models_[i].mesh.vao != 0) {
-      destroy_model(&models_[i]);
-    }
+    destroy_model(&models_[i]);
   }
   models_.clear();
 
   materials_.clear();
 
   for (size_t i = textures_.size(); i-- > 0;) {
-    if (textures_[i].id != 0) {
-      destroy_texture(&textures_[i]);
-    }
+    destroy_texture(&textures_[i]);
   }
   textures_.clear();
 
   for (size_t i = shaders_.size(); i-- > 0;) {
-    if (shaders_[i].id != 0) {
-      destroy_shader(&shaders_[i]);
-    }
+    destroy_shader(&shaders_[i]);
   }
   shaders_.clear();
 }
@@ -124,7 +149,9 @@ Shader* Renderer::create_shader(const fs::path& vert_path,
 }
 
 void Renderer::destroy_shader(Shader* shader) {
-  glDeleteProgram(shader->id);
+  if (shader->id != 0) {
+    glDeleteProgram(shader->id);
+  }
   LOGF("GL", "Shader destroyed (vertex: \"{}\") (fragment: \"{}\") (id: {})",
        shader->vert_path.string(), shader->frag_path.string(), shader->id);
   *shader = {};
@@ -202,7 +229,9 @@ Texture* Renderer::create_texture(const fs::path& path) {
 }
 
 void Renderer::destroy_texture(Texture* texture) {
-  glDeleteTextures(1, &texture->id);
+  if (texture->id != 0) {
+    glDeleteTextures(1, &texture->id);
+  }
   LOGF("GL", "Texture destroyed (file: \"{}\") (id: {})",
        texture->path.string(), texture->id);
   *texture = {};
@@ -362,9 +391,15 @@ Model* Renderer::create_model(const fs::path& path) {
 }
 
 void Renderer::destroy_model(Model* model) {
-  glDeleteBuffers(1, &model->mesh.vao);
-  glDeleteBuffers(1, &model->mesh.vbo);
-  glDeleteBuffers(1, &model->mesh.ebo);
+  if (model->mesh.vao != 0) {
+    glDeleteBuffers(1, &model->mesh.vao);
+  }
+  if (model->mesh.vbo != 0) {
+    glDeleteBuffers(1, &model->mesh.vbo);
+  }
+  if (model->mesh.ebo != 0) {
+    glDeleteBuffers(1, &model->mesh.ebo);
+  }
   LOGF("GL", "Model destroyed (file: \"{}\") (vao: {})", model->path.string(),
        model->mesh.vao);
   *model = {};
@@ -372,7 +407,7 @@ void Renderer::destroy_model(Model* model) {
 
 void Renderer::draw_model(const Transform& transform, Model* model,
                           Material* material) {
-  if (bound_material_ != material) {
+  if (material != nullptr && bound_material_ != material) {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, material->base_color->id);
     bound_material_ = material;
@@ -396,12 +431,50 @@ void Renderer::draw_model(const Transform& transform, Model* model,
               glm::radians(transform.rotation), {0.0F, 1.0F, 0.0F}),
           glm::vec3{transform.scale}));
 
-  set_shader_uniform(bound_shader_, "texture_base", 0);
+  if (material != nullptr) {
+    set_shader_uniform(bound_shader_, "texture_base", 0);
+  }
 
   glBindVertexArray(model->mesh.vao);
   glDrawElements(GL_TRIANGLES, model->mesh.index_count, GL_UNSIGNED_INT,
                  nullptr);
   glBindVertexArray(0);
+}
+
+uint32_t Renderer::get_picking_texture_id(glm::ivec2 position) const {
+  glBindFramebuffer(GL_READ_FRAMEBUFFER, picking_texture_.fbo);
+  glReadBuffer(GL_COLOR_ATTACHMENT0);
+
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+  std::array<unsigned char, 4> data{};
+  glReadPixels(position.x, position.y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE,
+               data.data());
+
+  glReadBuffer(GL_NONE);
+  glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+  return data[0] + data[1] * 256 + data[2] * 256 * 256;
+}
+
+void Renderer::set_picking_texture_id(uint32_t id) {
+  set_shader_uniform(
+      bound_shader_, "picking_color",
+      glm::vec4{static_cast<float>((id & 0x000000FFU) >> 0U) / 255.0F,
+                static_cast<float>((id & 0x0000FF00U) >> 8U) / 255.0F,
+                static_cast<float>((id & 0x00FF0000U) >> 16U) / 255.0F, 1.0F});
+}
+
+void Renderer::enable_picking_texture_writing() const {
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, picking_texture_.fbo);
+  glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+}
+
+void Renderer::disable_picking_texture_writing() {
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+
+  glFlush();
+  glFinish();
 }
 
 void Renderer::begin_drawing(Camera& camera) {
@@ -413,4 +486,16 @@ void Renderer::begin_drawing(Camera& camera) {
 void Renderer::end_drawing() {
   camera_ = nullptr;
   glfwSwapBuffers(window_);
+}
+
+void Renderer::destroy_picking_texture(PickingTexture* picking_texture) {
+  if (picking_texture->fbo != 0) {
+    glDeleteFramebuffers(1, &picking_texture->fbo);
+  }
+  if (picking_texture->picking != 0) {
+    glDeleteTextures(1, &picking_texture->picking);
+  }
+  if (picking_texture->depth != 0) {
+    glDeleteTextures(1, &picking_texture->depth);
+  }
 }

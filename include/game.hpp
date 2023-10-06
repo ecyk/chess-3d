@@ -10,7 +10,7 @@ inline constexpr glm::vec2 k_window_size{1280, 720};
 class Game {
   static constexpr float k_game_scale{10.0F};
 
-  static constexpr glm::vec3 k_camera_position{0, 4.0F, -4.0F};
+  static constexpr glm::vec3 k_camera_position{0, 40.0F, -40.0F};
   static constexpr glm::vec3 k_camera_target{};
 
  public:
@@ -36,7 +36,8 @@ class Game {
   glm::vec2 mouse_last_position_{k_window_size / 2.0F};
   bool first_mouse_input_{true};
 
-  Shader* shader_{};
+  Shader* base_shader_{};
+  Shader* picking_shader_{};
 
   enum class ModelType {
     Board,

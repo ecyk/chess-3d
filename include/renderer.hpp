@@ -70,19 +70,22 @@ class Renderer {
   static void destroy_shader(Shader* shader);
   void bind_shader(Shader* shader);
 
-#define SET_SHADER_IMPL(type, uniform, ...)                               \
+#define SET_SHADER_UNIFORM_IMPL(type, uniform, ...)                       \
   static void set_shader_uniform(Shader* shader, std::string_view name,   \
                                  type value) {                            \
     const GLint location = glGetUniformLocation(shader->id, name.data()); \
     uniform(location, __VA_ARGS__);                                       \
   }
 
-  SET_SHADER_IMPL(int, glUniform1i, value);
-  SET_SHADER_IMPL(float, glUniform1f, value);
-  SET_SHADER_IMPL(const glm::vec3&, glUniform3fv, 1, glm::value_ptr(value));
-  SET_SHADER_IMPL(const glm::mat4&, glUniformMatrix4fv, 1, GL_FALSE,
-                  glm::value_ptr(value));
-#undef SET_SHADER_IMPL
+  SET_SHADER_UNIFORM_IMPL(int, glUniform1i, value);
+  SET_SHADER_UNIFORM_IMPL(float, glUniform1f, value);
+  SET_SHADER_UNIFORM_IMPL(const glm::vec3&, glUniform3fv, 1,
+                          glm::value_ptr(value));
+  SET_SHADER_UNIFORM_IMPL(const glm::vec4&, glUniform4fv, 1,
+                          glm::value_ptr(value));
+  SET_SHADER_UNIFORM_IMPL(const glm::mat4&, glUniformMatrix4fv, 1, GL_FALSE,
+                          glm::value_ptr(value));
+#undef SET_SHADER_UNIFORM_IMPL
 
   Texture* create_texture(const fs::path& path);
   static void destroy_texture(Texture* texture);
@@ -90,6 +93,11 @@ class Renderer {
   Model* create_model(const fs::path& path);
   static void destroy_model(Model* model);
   void draw_model(const Transform& transform, Model* model, Material* material);
+
+  [[nodiscard]] uint32_t get_picking_texture_id(glm::ivec2 position) const;
+  void set_picking_texture_id(uint32_t id);
+  void enable_picking_texture_writing() const;
+  static void disable_picking_texture_writing();
 
   void begin_drawing(Camera& camera);
   void end_drawing();
@@ -108,4 +116,14 @@ class Renderer {
   std::deque<Texture> textures_;
   std::deque<Material> materials_;
   std::deque<Model> models_;
+
+  struct PickingTexture {
+    GLuint fbo{};
+    GLuint picking{};
+    GLuint depth{};
+  };
+
+  static void destroy_picking_texture(PickingTexture* picking_texture);
+
+  PickingTexture picking_texture_;
 };

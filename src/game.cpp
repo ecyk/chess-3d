@@ -2,6 +2,9 @@
 
 #include <GLFW/glfw3.h>
 
+#define SHADER(filename) "resources/shaders/" filename
+#define MODEL(filename) "resources/models/" filename
+
 Game::Game(GLFWwindow* window) : renderer_{window} {
   glfwSetWindowUserPointer(window, this);
 
@@ -14,24 +17,27 @@ Game::Game(GLFWwindow* window) : renderer_{window} {
 }
 
 void Game::run() {
-  shader_ = renderer_.create_shader("resources/shaders/vertex.vert",
-                                    "resources/shaders/fragment.frag");
-  if (shader_ == nullptr) {
-    return;
+#define LOAD_SHADER(shader, vert, frag)                    \
+  if (!((shader) = renderer_.create_shader(vert, frag))) { \
+    return;                                                \
   }
+
+  LOAD_SHADER(base_shader_, SHADER("base.vert"), SHADER("base.frag"));
+  LOAD_SHADER(picking_shader_, SHADER("picking.vert"), SHADER("picking.frag"));
+#undef LOAD_SHADER
 
 #define LOAD_MODEL(model, path)                                          \
   if (!(models_[to_underlying(model)] = renderer_.create_model(path))) { \
     return;                                                              \
   }
 
-  LOAD_MODEL(ModelType::Board, "resources/models/board.gltf")
-  LOAD_MODEL(ModelType::King, "resources/models/king.gltf")
-  LOAD_MODEL(ModelType::Queen, "resources/models/queen.gltf")
-  LOAD_MODEL(ModelType::Bishop, "resources/models/bishop.gltf")
-  LOAD_MODEL(ModelType::Knight, "resources/models/knight.gltf")
-  LOAD_MODEL(ModelType::Rook, "resources/models/rook.gltf")
-  LOAD_MODEL(ModelType::Pawn, "resources/models/pawn.gltf")
+  LOAD_MODEL(ModelType::Board, MODEL("board.gltf"))
+  LOAD_MODEL(ModelType::King, MODEL("king.gltf"))
+  LOAD_MODEL(ModelType::Queen, MODEL("queen.gltf"))
+  LOAD_MODEL(ModelType::Bishop, MODEL("bishop.gltf"))
+  LOAD_MODEL(ModelType::Knight, MODEL("knight.gltf"))
+  LOAD_MODEL(ModelType::Rook, MODEL("rook.gltf"))
+  LOAD_MODEL(ModelType::Pawn, MODEL("pawn.gltf"))
 #undef LOAD_MODEL
 
   glEnable(GL_DEPTH_TEST);
@@ -55,12 +61,20 @@ void Game::run() {
   }
 }
 
-void Game::update() {}
+void Game::update() {
+  int width{};
+  int height{};
+  glfwGetWindowSize(renderer_.get_window(), &width, &height);
+
+  uint32_t id = renderer_.get_picking_texture_id(
+      {mouse_last_position_.x,
+       static_cast<float>(height) - mouse_last_position_.y});
+  LOGF("GAME", "id {}", id);
+}
 
 void Game::draw() {
-  static Transform transform;
-  transform.rotation += 45.0F * delta_time_;
-  transform.scale = k_game_scale;
+  const Transform transform1{{}, 0.0F, k_game_scale};
+  const Transform transform2{{14.5F, 1.1F, 14.5F}, 0.0F, k_game_scale};
 
   Model* model = models_[current_model_];
   Material* material = model->mesh.default_;
@@ -69,8 +83,24 @@ void Game::draw() {
                                                          : model->mesh.black;
   }
 
-  renderer_.bind_shader(shader_);
-  renderer_.draw_model(transform, model, material);
+  Model* model2 = models_[to_underlying(ModelType::King)];
+
+  renderer_.bind_shader(picking_shader_);
+  renderer_.enable_picking_texture_writing();
+
+  renderer_.set_picking_texture_id(2);
+  renderer_.draw_model(transform1, model, nullptr);
+
+  renderer_.set_picking_texture_id(3);
+  renderer_.draw_model(transform2, model2, nullptr);
+
+  renderer_.disable_picking_texture_writing();
+
+  renderer_.bind_shader(base_shader_);
+
+  renderer_.draw_model(transform1, model, material);
+
+  renderer_.draw_model(transform2, model2, model2->mesh.white);
 }
 
 void Game::process_input() {
@@ -81,7 +111,7 @@ void Game::process_input() {
 }
 
 void Game::mouse_button_callback(GLFWwindow* window, int button, int action,
-                                 int mods) {
+                                 int /*mods*/) {
   auto* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
   if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
     if (++game->current_model_ == to_underlying(ModelType::Count)) {
@@ -92,7 +122,6 @@ void Game::mouse_button_callback(GLFWwindow* window, int button, int action,
 
 void Game::mouse_move_callback(GLFWwindow* window, double xpos, double ypos) {
   auto* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
-
   if (game->first_mouse_input_) {
     game->mouse_last_position_.x = static_cast<float>(xpos);
     game->mouse_last_position_.y = static_cast<float>(ypos);

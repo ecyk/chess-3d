@@ -3,8 +3,8 @@
 #include "common.hpp"
 
 class Camera {
-  static constexpr float k_min_distance{4.0F};
-  static constexpr float k_max_distance{10.0F};
+  static constexpr float k_min_distance{40.0F};
+  static constexpr float k_max_distance{100.0F};
   static constexpr float k_sensitivity{0.1F};
 
  public:
