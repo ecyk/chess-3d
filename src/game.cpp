@@ -11,9 +11,6 @@ Game::Game(GLFWwindow* window) : renderer_{window} {
   glfwSetMouseButtonCallback(window, mouse_button_callback);
   glfwSetCursorPosCallback(window, mouse_move_callback);
   glfwSetScrollCallback(window, mouse_scroll_callback);
-  glfwSetKeyCallback(window, key_callback);
-
-  // glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 }
 
 void Game::run() {
@@ -22,8 +19,7 @@ void Game::run() {
     return;                                                \
   }
 
-  LOAD_SHADER(base_shader_, SHADER("base.vert"), SHADER("base.frag"));
-  LOAD_SHADER(picking_shader_, SHADER("picking.vert"), SHADER("picking.frag"));
+  LOAD_SHADER(shader_, SHADER("shader.vert"), SHADER("shader.frag"));
 #undef LOAD_SHADER
 
 #define LOAD_MODEL(model, path)                                          \
@@ -41,6 +37,14 @@ void Game::run() {
 #undef LOAD_MODEL
 
   glEnable(GL_DEPTH_TEST);
+  glDepthFunc(GL_LESS);
+
+  glEnable(GL_STENCIL_TEST);
+  glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
+  glStencilOp(GL_KEEP, GL_REPLACE, GL_REPLACE);
+
+  glEnable(GL_CULL_FACE);
+  glCullFace(GL_BACK);
 
   last_frame_ = static_cast<float>(glfwGetTime());
   while (glfwWindowShouldClose(renderer_.get_window()) != 1) {
@@ -61,46 +65,70 @@ void Game::run() {
   }
 }
 
-void Game::update() {
-  int width{};
-  int height{};
-  glfwGetWindowSize(renderer_.get_window(), &width, &height);
-
-  uint32_t id = renderer_.get_picking_texture_id(
-      {mouse_last_position_.x,
-       static_cast<float>(height) - mouse_last_position_.y});
-  LOGF("GAME", "id {}", id);
-}
+void Game::update() {}
 
 void Game::draw() {
-  const Transform transform1{{}, 0.0F, k_game_scale};
-  const Transform transform2{{14.5F, 1.1F, 14.5F}, 0.0F, k_game_scale};
+  const Transform board_transform{{}, 0.0F, k_game_scale};
+  const Transform white_king_transform{
+      {14.5F, 1.5F, 14.5F}, 0.0F, k_game_scale};
+  const Transform black_king_transform{
+      {-14.5F, 1.5F, -14.5F}, 0.0F, k_game_scale};
 
-  Model* model = models_[current_model_];
-  Material* material = model->mesh.default_;
-  if (current_model_ != to_underlying(ModelType::Board)) {
-    material = (static_cast<int>(time_passed_) % 2) != 0 ? model->mesh.white
-                                                         : model->mesh.black;
+  Model* board_model = models_[to_underlying(ModelType::Board)];
+  Model* king_model = models_[to_underlying(ModelType::King)];
+
+  renderer_.bind_shader(shader_);
+
+  if (update_picking_texture_) {
+    renderer_.picking_texture_writing_begin();
+
+    renderer_.bind_picking_texture_id(0);
+    renderer_.draw_model(board_transform, board_model);
+
+    renderer_.bind_picking_texture_id(1);
+    renderer_.draw_model(white_king_transform, king_model);
+
+    renderer_.bind_picking_texture_id(2);
+    renderer_.draw_model(black_king_transform, king_model);
+
+    renderer_.picking_texture_writing_end();
+
+    update_picking_texture_ = false;
   }
 
-  Model* model2 = models_[to_underlying(ModelType::King)];
+  renderer_.draw_model(board_transform, board_model,
+                       board_model->mesh.default_);
 
-  renderer_.bind_shader(picking_shader_);
-  renderer_.enable_picking_texture_writing();
+  if (selected_ == 1) {
+    Renderer::stencil_writing_begin();
+  }
 
-  renderer_.set_picking_texture_id(2);
-  renderer_.draw_model(transform1, model, nullptr);
+  renderer_.draw_model(white_king_transform, king_model,
+                       king_model->mesh.white);
 
-  renderer_.set_picking_texture_id(3);
-  renderer_.draw_model(transform2, model2, nullptr);
+  Renderer::stencil_writing_end();
 
-  renderer_.disable_picking_texture_writing();
+  if (selected_ == 2) {
+    Renderer::stencil_writing_begin();
+  }
 
-  renderer_.bind_shader(base_shader_);
+  renderer_.draw_model(black_king_transform, king_model,
+                       king_model->mesh.black);
 
-  renderer_.draw_model(transform1, model, material);
+  Renderer::stencil_writing_end();
 
-  renderer_.draw_model(transform2, model2, model2->mesh.white);
+  renderer_.outline_drawing_begin(0.0125F, {0.0F, 1.0F, 0.0F, 1.0F});
+
+  switch (selected_) {
+    case 1:
+      renderer_.draw_model(white_king_transform, king_model);
+      break;
+    case 2:
+      renderer_.draw_model(black_king_transform, king_model);
+      break;
+  }
+
+  renderer_.outline_drawing_end();
 }
 
 void Game::process_input() {
@@ -113,10 +141,14 @@ void Game::process_input() {
 void Game::mouse_button_callback(GLFWwindow* window, int button, int action,
                                  int /*mods*/) {
   auto* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
-  if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
-    if (++game->current_model_ == to_underlying(ModelType::Count)) {
-      game->current_model_ = 0;
-    }
+  if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+    int id = game->renderer_.get_picking_texture_id(game->mouse_last_position_);
+    LOGF("GAME", "id {}", id);
+  }
+
+  if (button == GLFW_MOUSE_BUTTON_MIDDLE && action == GLFW_RELEASE) {
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    game->update_picking_texture_ = true;
   }
 }
 
@@ -134,20 +166,18 @@ void Game::mouse_move_callback(GLFWwindow* window, double xpos, double ypos) {
   game->mouse_last_position_.x = static_cast<float>(xpos);
   game->mouse_last_position_.y = static_cast<float>(ypos);
 
-  const int mouse_left{glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT)};
-  if (mouse_left == GLFW_PRESS) {
+  if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS) {
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     game->camera_.process_mouse_movement(offset_x, offset_y);
-  } else if (mouse_left == GLFW_RELEASE) {
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
   }
+
+  game->selected_ =
+      game->renderer_.get_picking_texture_id(game->mouse_last_position_);
 }
 
 void Game::mouse_scroll_callback(GLFWwindow* window, double /*xoffset*/,
                                  double yoffset) {
   auto* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
   game->camera_.process_mouse_scroll(static_cast<float>(yoffset));
+  game->update_picking_texture_ = true;
 }
-
-void Game::key_callback(GLFWwindow* window, int key, int /*scancode*/,
-                        int action, int /*mods*/) {}

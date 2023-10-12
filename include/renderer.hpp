@@ -92,12 +92,19 @@ class Renderer {
 
   Model* create_model(const fs::path& path);
   static void destroy_model(Model* model);
-  void draw_model(const Transform& transform, Model* model, Material* material);
+  void draw_model(const Transform& transform, Model* model,
+                  Material* material = nullptr);
 
-  [[nodiscard]] uint32_t get_picking_texture_id(glm::ivec2 position) const;
-  void set_picking_texture_id(uint32_t id);
-  void enable_picking_texture_writing() const;
-  static void disable_picking_texture_writing();
+  void picking_texture_writing_begin() const;
+  void picking_texture_writing_end();
+  void bind_picking_texture_id(int id);
+  [[nodiscard]] int get_picking_texture_id(const glm::ivec2& position) const;
+
+  void outline_drawing_begin(float thickness, const glm::vec4& color);
+  void outline_drawing_end();
+
+  static void stencil_writing_begin();
+  static void stencil_writing_end();
 
   void begin_drawing(Camera& camera);
   void end_drawing();
@@ -123,7 +130,8 @@ class Renderer {
     GLuint depth{};
   };
 
-  static void destroy_picking_texture(PickingTexture* picking_texture);
-
   PickingTexture picking_texture_;
+
+  void init_picking_texture();
+  void destroy_picking_texture();
 };

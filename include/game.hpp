@@ -25,6 +25,7 @@ class Game {
   void process_input();
 
   Renderer renderer_;
+  bool update_picking_texture_{true};
 
   float delta_time_{};
   float last_frame_{};
@@ -36,8 +37,7 @@ class Game {
   glm::vec2 mouse_last_position_{k_window_size / 2.0F};
   bool first_mouse_input_{true};
 
-  Shader* base_shader_{};
-  Shader* picking_shader_{};
+  Shader* shader_{};
 
   enum class ModelType {
     Board,
@@ -54,13 +54,11 @@ class Game {
 
   Models models_{};
 
-  uint32_t current_model_{};
+  int selected_{-1};
 
   static void mouse_button_callback(GLFWwindow* window, int button, int action,
                                     int mods);
   static void mouse_move_callback(GLFWwindow* window, double xpos, double ypos);
   static void mouse_scroll_callback(GLFWwindow* window, double xoffset,
                                     double yoffset);
-  static void key_callback(GLFWwindow* window, int key, int scancode,
-                           int action, int mods);
 };

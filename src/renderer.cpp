@@ -7,38 +7,11 @@
 #include <fstream>
 
 Renderer::Renderer(GLFWwindow* window) : window_{window} {
-  glGenFramebuffers(1, &picking_texture_.fbo);
-  glBindFramebuffer(GL_FRAMEBUFFER, picking_texture_.fbo);
-
-  int width{};
-  int height{};
-  glfwGetWindowSize(window, &width, &height);
-
-  glGenTextures(1, &picking_texture_.picking);
-  glBindTexture(GL_TEXTURE_2D, picking_texture_.picking);
-
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
-               GL_UNSIGNED_BYTE, nullptr);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                         picking_texture_.picking, 0);
-
-  glGenTextures(1, &picking_texture_.depth);
-  glBindTexture(GL_TEXTURE_2D, picking_texture_.depth);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, width, height, 0,
-               GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
-  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D,
-                         picking_texture_.depth, 0);
-
-  assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
-
-  glBindTexture(GL_TEXTURE_2D, 0);
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  init_picking_texture();
 }
 
 Renderer::~Renderer() {
-  destroy_picking_texture(&picking_texture_);
+  destroy_picking_texture();
 
   for (size_t i = models_.size(); i-- > 0;) {
     destroy_model(&models_[i]);
@@ -421,7 +394,7 @@ void Renderer::draw_model(const Transform& transform, Model* model,
                            static_cast<float>(height)};
   set_shader_uniform(
       bound_shader_, "projection",
-      glm::perspective(glm::radians(60.0F), aspect_ratio, 0.1F, 100.0F));
+      glm::perspective(glm::radians(60.0F), aspect_ratio, 0.1F, 125.0F));
   set_shader_uniform(bound_shader_, "view", camera_->calculate_view_matrix());
   set_shader_uniform(
       bound_shader_, "model",
@@ -432,7 +405,7 @@ void Renderer::draw_model(const Transform& transform, Model* model,
           glm::vec3{transform.scale}));
 
   if (material != nullptr) {
-    set_shader_uniform(bound_shader_, "texture_base", 0);
+    set_shader_uniform(bound_shader_, "base_texture", 0);
   }
 
   glBindVertexArray(model->mesh.vao);
@@ -441,45 +414,85 @@ void Renderer::draw_model(const Transform& transform, Model* model,
   glBindVertexArray(0);
 }
 
-uint32_t Renderer::get_picking_texture_id(glm::ivec2 position) const {
-  glBindFramebuffer(GL_READ_FRAMEBUFFER, picking_texture_.fbo);
-  glReadBuffer(GL_COLOR_ATTACHMENT0);
-
-  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-  std::array<unsigned char, 4> data{};
-  glReadPixels(position.x, position.y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE,
-               data.data());
-
-  glReadBuffer(GL_NONE);
-  glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-  return data[0] + data[1] * 256 + data[2] * 256 * 256;
-}
-
-void Renderer::set_picking_texture_id(uint32_t id) {
-  set_shader_uniform(
-      bound_shader_, "picking_color",
-      glm::vec4{static_cast<float>((id & 0x000000FFU) >> 0U) / 255.0F,
-                static_cast<float>((id & 0x0000FF00U) >> 8U) / 255.0F,
-                static_cast<float>((id & 0x00FF0000U) >> 16U) / 255.0F, 1.0F});
-}
-
-void Renderer::enable_picking_texture_writing() const {
+void Renderer::picking_texture_writing_begin() const {
   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, picking_texture_.fbo);
-  glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
+  glClearColor(0.0F, 0.0F, 0.0F, 0.0F);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  set_shader_uniform(bound_shader_, "blend_factor", 0.0F);
 }
 
-void Renderer::disable_picking_texture_writing() {
+void Renderer::picking_texture_writing_end() {
+  set_shader_uniform(bound_shader_, "blend_factor", 1.0F);
   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 
   glFlush();
   glFinish();
 }
 
+void Renderer::bind_picking_texture_id(int id) {
+  assert(id >= 0 && id <= 16777215);
+#define NORMALIZE_ID(id, mask, shift) \
+  (static_cast<float>((static_cast<uint32_t>(id) & (mask)) >> (shift)) / 255.0F)
+  auto r{NORMALIZE_ID(id, 0x0000FFU, 0U)};
+  auto g{NORMALIZE_ID(id, 0x00FF00U, 8U)};
+  auto b{NORMALIZE_ID(id, 0xFF0000U, 16U)};
+#undef NORMALIZE_ID
+  set_shader_uniform(bound_shader_, "solid_color", glm::vec4{r, g, b, 1.0F});
+}
+
+int Renderer::get_picking_texture_id(const glm::ivec2& position) const {
+  glBindFramebuffer(GL_READ_FRAMEBUFFER, picking_texture_.fbo);
+  glReadBuffer(GL_COLOR_ATTACHMENT0);
+
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+  int height{};
+  glfwGetWindowSize(window_, nullptr, &height);
+
+  std::array<unsigned char, 4> data{};
+  glReadPixels(position.x, height - position.y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE,
+               data.data());
+
+  glReadBuffer(GL_NONE);
+  glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+
+  if (data[3] != 0) {
+    return data[0] + data[1] * 256 + data[2] * 256 * 256;
+  }
+
+  return -1;
+}
+
+void Renderer::outline_drawing_begin(float thickness, const glm::vec4& color) {
+  glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
+  glStencilMask(0x00);
+  // glDisable(GL_DEPTH_TEST);
+  set_shader_uniform(bound_shader_, "outline_thickness", thickness);
+  set_shader_uniform(bound_shader_, "solid_color", color);
+  set_shader_uniform(bound_shader_, "blend_factor", 0.0F);
+}
+
+void Renderer::outline_drawing_end() {
+  set_shader_uniform(bound_shader_, "outline_thickness", 0.0F);
+  set_shader_uniform(bound_shader_, "blend_factor", 1.0F);
+  glStencilMask(0xFF);
+  glStencilFunc(GL_ALWAYS, 0, 0xFF);
+  // glEnable(GL_DEPTH_TEST);
+}
+
+void Renderer::stencil_writing_begin() {
+  glStencilFunc(GL_ALWAYS, 1, 0xFF);
+  glStencilMask(0xFF);
+}
+
+void Renderer::stencil_writing_end() {
+  glStencilMask(0xFF);
+  glStencilFunc(GL_ALWAYS, 0, 0xFF);
+}
+
 void Renderer::begin_drawing(Camera& camera) {
   glClearColor(0.25F, 0.25F, 0.25F, 1.0F);
-  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
   camera_ = &camera;
 }
 
@@ -488,14 +501,45 @@ void Renderer::end_drawing() {
   glfwSwapBuffers(window_);
 }
 
-void Renderer::destroy_picking_texture(PickingTexture* picking_texture) {
-  if (picking_texture->fbo != 0) {
-    glDeleteFramebuffers(1, &picking_texture->fbo);
+void Renderer::init_picking_texture() {
+  glGenFramebuffers(1, &picking_texture_.fbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, picking_texture_.fbo);
+
+  int width{};
+  int height{};
+  glfwGetWindowSize(window_, &width, &height);
+
+  glGenTextures(1, &picking_texture_.picking);
+  glBindTexture(GL_TEXTURE_2D, picking_texture_.picking);
+
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
+               GL_UNSIGNED_BYTE, nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                         picking_texture_.picking, 0);
+
+  glGenTextures(1, &picking_texture_.depth);
+  glBindTexture(GL_TEXTURE_2D, picking_texture_.depth);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, width, height, 0,
+               GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D,
+                         picking_texture_.depth, 0);
+
+  assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void Renderer::destroy_picking_texture() {
+  if (picking_texture_.fbo != 0) {
+    glDeleteFramebuffers(1, &picking_texture_.fbo);
   }
-  if (picking_texture->picking != 0) {
-    glDeleteTextures(1, &picking_texture->picking);
+  if (picking_texture_.picking != 0) {
+    glDeleteTextures(1, &picking_texture_.picking);
   }
-  if (picking_texture->depth != 0) {
-    glDeleteTextures(1, &picking_texture->depth);
+  if (picking_texture_.depth != 0) {
+    glDeleteTextures(1, &picking_texture_.depth);
   }
 }
