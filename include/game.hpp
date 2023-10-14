@@ -1,6 +1,6 @@
 #pragma once
 
-#include "camera.hpp"
+#include "board.hpp"
 #include "renderer.hpp"
 
 struct GLFWwindow;
@@ -23,6 +23,9 @@ class Game {
   void draw();
 
   void process_input();
+
+  void draw_picking_texture();
+  void draw_piece(const Tile& tile, bool use_material);
 
   Renderer renderer_;
   bool update_picking_texture_{true};
@@ -54,7 +57,14 @@ class Game {
 
   Models models_{};
 
-  int selected_{-1};
+  [[nodiscard]] Model* get_model(ModelType type) const;
+  [[nodiscard]] Model* get_model(Piece piece) const;
+
+  Board board_;
+
+  Piece selected_piece_{};
+
+  static Transform calculate_piece_transform(int x, int y, Piece piece);
 
   static void mouse_button_callback(GLFWwindow* window, int button, int action,
                                     int mods);

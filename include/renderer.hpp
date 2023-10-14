@@ -95,16 +95,16 @@ class Renderer {
   void draw_model(const Transform& transform, Model* model,
                   Material* material = nullptr);
 
-  void picking_texture_writing_begin() const;
-  void picking_texture_writing_end();
+  void begin_picking_texture_writing() const;
+  void end_picking_texture_writing();
   void bind_picking_texture_id(int id);
   [[nodiscard]] int get_picking_texture_id(const glm::ivec2& position) const;
 
-  void outline_drawing_begin(float thickness, const glm::vec4& color);
-  void outline_drawing_end();
+  void begin_outline_drawing(float thickness, const glm::vec4& color);
+  void end_outline_drawing();
 
-  static void stencil_writing_begin();
-  static void stencil_writing_end();
+  static void begin_stencil_writing();
+  static void end_stencil_writing();
 
   void begin_drawing(Camera& camera);
   void end_drawing();

@@ -414,14 +414,14 @@ void Renderer::draw_model(const Transform& transform, Model* model,
   glBindVertexArray(0);
 }
 
-void Renderer::picking_texture_writing_begin() const {
+void Renderer::begin_picking_texture_writing() const {
   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, picking_texture_.fbo);
   glClearColor(0.0F, 0.0F, 0.0F, 0.0F);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   set_shader_uniform(bound_shader_, "blend_factor", 0.0F);
 }
 
-void Renderer::picking_texture_writing_end() {
+void Renderer::end_picking_texture_writing() {
   set_shader_uniform(bound_shader_, "blend_factor", 1.0F);
   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 
@@ -463,7 +463,7 @@ int Renderer::get_picking_texture_id(const glm::ivec2& position) const {
   return -1;
 }
 
-void Renderer::outline_drawing_begin(float thickness, const glm::vec4& color) {
+void Renderer::begin_outline_drawing(float thickness, const glm::vec4& color) {
   glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
   glStencilMask(0x00);
   // glDisable(GL_DEPTH_TEST);
@@ -472,7 +472,7 @@ void Renderer::outline_drawing_begin(float thickness, const glm::vec4& color) {
   set_shader_uniform(bound_shader_, "blend_factor", 0.0F);
 }
 
-void Renderer::outline_drawing_end() {
+void Renderer::end_outline_drawing() {
   set_shader_uniform(bound_shader_, "outline_thickness", 0.0F);
   set_shader_uniform(bound_shader_, "blend_factor", 1.0F);
   glStencilMask(0xFF);
@@ -480,12 +480,12 @@ void Renderer::outline_drawing_end() {
   // glEnable(GL_DEPTH_TEST);
 }
 
-void Renderer::stencil_writing_begin() {
+void Renderer::begin_stencil_writing() {
   glStencilFunc(GL_ALWAYS, 1, 0xFF);
   glStencilMask(0xFF);
 }
 
-void Renderer::stencil_writing_end() {
+void Renderer::end_stencil_writing() {
   glStencilMask(0xFF);
   glStencilFunc(GL_ALWAYS, 0, 0xFF);
 }
