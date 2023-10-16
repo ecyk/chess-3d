@@ -18,8 +18,10 @@ int main() {
     return 1;
   }
 
-  Game game{window};
-  game.run();
+  {
+    Game game{window};
+    game.run();
+  }
 
   glfw_destroy();
   return 0;
@@ -51,9 +53,10 @@ void error_callback(int /*error_code*/, const char* description) {
   LOG("GLFW", description);
 }
 
-void framebuffer_resize_callback(GLFWwindow* /*window*/, int width,
-                                 int height) {
+void framebuffer_resize_callback(GLFWwindow* window, int width, int height) {
+  auto* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
   glViewport(0, 0, width, height);
+  game->resize_picking_texture({width, height});
 }
 
 GLFWwindow* glfw_init() {

@@ -54,6 +54,8 @@ struct Model {
   Mesh mesh;
 };
 
+enum class Framebuffer : GLuint;
+
 class Renderer {
  public:
   explicit Renderer(GLFWwindow* window);
@@ -92,22 +94,24 @@ class Renderer {
 
   Model* create_model(const fs::path& path);
   static void destroy_model(Model* model);
-  void draw_model(const Transform& transform, Model* model,
-                  Material* material = nullptr);
+  void draw_model(const Transform& transform, Model* model, Material* material);
+  void draw_model_outline(const Transform& transform, Model* model,
+                          Material* material, float thickness,
+                          const glm::vec4& color);
 
-  void begin_picking_texture_writing() const;
-  void end_picking_texture_writing();
-  void bind_picking_texture_id(int id);
-  [[nodiscard]] int get_picking_texture_id(const glm::ivec2& position) const;
+  Framebuffer* create_framebuffer(const glm::ivec2& size);
+  static void destroy_framebuffer(Framebuffer* framebuffer);
+  void bind_framebuffer(GLenum target, Framebuffer* framebuffer);
+  void unbind_framebuffer(GLenum target);
+  static void clear_framebuffer();
 
-  void begin_outline_drawing(float thickness, const glm::vec4& color);
-  void end_outline_drawing();
-
-  static void begin_stencil_writing();
-  static void end_stencil_writing();
+  static int read_pixel(const glm::ivec2& coord);
 
   void begin_drawing(Camera& camera);
   void end_drawing();
+
+  static void begin_wire_mode();
+  static void end_wire_mode();
 
   [[nodiscard]] GLFWwindow* get_window() const { return window_; }
 
@@ -118,20 +122,11 @@ class Renderer {
 
   Shader* bound_shader_{};
   Material* bound_material_{};
+  Framebuffer* bound_framebuffer_{};
 
   std::deque<Shader> shaders_;
   std::deque<Texture> textures_;
   std::deque<Material> materials_;
   std::deque<Model> models_;
-
-  struct PickingTexture {
-    GLuint fbo{};
-    GLuint picking{};
-    GLuint depth{};
-  };
-
-  PickingTexture picking_texture_;
-
-  void init_picking_texture();
-  void destroy_picking_texture();
+  std::deque<Framebuffer> framebuffers_;
 };
