@@ -25,8 +25,7 @@ inline bool is_piece_type(Piece piece, PieceType type) {
 }
 
 struct Tile {
-  int x{};
-  int y{};
+  glm::ivec2 coord{};
   Piece piece{};
 };
 
@@ -52,9 +51,14 @@ class Board {
  public:
   Board();
 
-  Piece& at(int x, int y) { return tiles_.at(y * 8 + x); }
+  void move_to(Piece piece, const glm::ivec2& coord);
+  [[nodiscard]] glm::ivec2 get_coord(Piece piece) const;
 
   void reset();
+
+  [[nodiscard]] Piece get_tile(const glm::ivec2& coord) const {
+    return tiles_.at(coord.y * 8 + coord.x);
+  }
 
   [[nodiscard]] const ActiveTiles& get_active_tiles() const {
     return active_tiles_;
@@ -62,6 +66,10 @@ class Board {
 
  private:
   void update_active_tiles();
+
+  void set_tile(const glm::ivec2& coord, Piece piece) {
+    tiles_.at(coord.y * 8 + coord.x) = piece;
+  }
 
   Tiles tiles_{};
   ActiveTiles active_tiles_;

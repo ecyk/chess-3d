@@ -135,6 +135,7 @@ void Renderer::bind_shader(Shader* shader) {
   if (bound_shader_ != shader) {
     glUseProgram(shader->id);
     bound_shader_ = shader;
+    bound_material_ = nullptr;
   }
 }
 
@@ -385,8 +386,9 @@ void Renderer::draw_model(const Transform& transform, Model* model,
   if (material != nullptr && bound_material_ != material) {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, material->base_color->id);
-    bound_material_ = material;
   }
+
+  bound_material_ = material;
 
   int width{};
   int height{};
@@ -406,8 +408,8 @@ void Renderer::draw_model(const Transform& transform, Model* model,
               glm::radians(transform.rotation), {0.0F, 1.0F, 0.0F}),
           glm::vec3{transform.scale}));
 
-  if (material != nullptr) {
-    set_shader_uniform(bound_shader_, "base_texture", 0);
+  if (bound_material_ != nullptr) {
+    set_shader_uniform(bound_shader_, "base_tex", 0);
   }
 
   glBindVertexArray(model->mesh.vao);
@@ -417,30 +419,15 @@ void Renderer::draw_model(const Transform& transform, Model* model,
 }
 
 void Renderer::draw_model_outline(const Transform& transform, Model* model,
-                                  Material* material, float thickness,
-                                  const glm::vec4& color) {
-  glClear(GL_STENCIL_BUFFER_BIT);
-
-  glStencilFunc(GL_ALWAYS, 1, 0xFF);
-  glStencilMask(0xFF);
-
-  draw_model(transform, model, material);
-
-  glStencilMask(0xFF);
-  glStencilFunc(GL_ALWAYS, 0, 0xFF);
-
+                                  float thickness, const glm::vec4& color) {
   glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
   glStencilMask(0x00);
   // glDisable(GL_DEPTH_TEST);
   set_shader_uniform(bound_shader_, "outline_thickness", thickness);
-  set_shader_uniform(bound_shader_, "solid_color", color);
-  set_shader_uniform(bound_shader_, "blend_factor", 0.0F);
+  set_shader_uniform(bound_shader_, "color", color);
 
   draw_model(transform, model, nullptr);
 
-  set_shader_uniform(bound_shader_, "outline_thickness", 0.0F);
-  set_shader_uniform(bound_shader_, "solid_color", glm::vec4{1.0F});
-  set_shader_uniform(bound_shader_, "blend_factor", 1.0F);
   glStencilMask(0xFF);
   glStencilFunc(GL_ALWAYS, 0, 0xFF);
   // glEnable(GL_DEPTH_TEST);
@@ -516,7 +503,7 @@ void Renderer::destroy_framebuffer(Framebuffer* framebuffer) {
   }
 }
 
-void Renderer::bind_framebuffer(GLenum target, Framebuffer* framebuffer) {
+void Renderer::bind_framebuffer(Framebuffer* framebuffer, GLenum target) {
   if (bound_framebuffer_ != framebuffer) {
     glBindFramebuffer(target, static_cast<GLuint>(*framebuffer));
     bound_framebuffer_ = framebuffer;
@@ -554,6 +541,18 @@ void Renderer::end_drawing() {
   camera_ = nullptr;
   glfwSwapBuffers(window_);
 }
+
+void Renderer::begin_stencil_writing() {
+  glStencilFunc(GL_ALWAYS, 1, 0xFF);
+  glStencilMask(0xFF);
+}
+
+void Renderer::end_stencil_writing() {
+  glStencilMask(0xFF);
+  glStencilFunc(GL_ALWAYS, 0, 0xFF);
+}
+
+void Renderer::clear_stencil() { glClear(GL_STENCIL_BUFFER_BIT); }
 
 void Renderer::begin_wire_mode() { glPolygonMode(GL_FRONT_AND_BACK, GL_LINE); }
 

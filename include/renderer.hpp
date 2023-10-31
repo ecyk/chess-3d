@@ -96,12 +96,11 @@ class Renderer {
   static void destroy_model(Model* model);
   void draw_model(const Transform& transform, Model* model, Material* material);
   void draw_model_outline(const Transform& transform, Model* model,
-                          Material* material, float thickness,
-                          const glm::vec4& color);
+                          float thickness, const glm::vec4& color);
 
   Framebuffer* create_framebuffer(const glm::ivec2& size);
   static void destroy_framebuffer(Framebuffer* framebuffer);
-  void bind_framebuffer(GLenum target, Framebuffer* framebuffer);
+  void bind_framebuffer(Framebuffer* framebuffer, GLenum target);
   void unbind_framebuffer(GLenum target);
   static void clear_framebuffer();
 
@@ -109,6 +108,10 @@ class Renderer {
 
   void begin_drawing(Camera& camera);
   void end_drawing();
+
+  static void begin_stencil_writing();
+  static void end_stencil_writing();
+  static void clear_stencil();
 
   static void begin_wire_mode();
   static void end_wire_mode();

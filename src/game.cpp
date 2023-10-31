@@ -3,6 +3,7 @@
 #include <GLFW/glfw3.h>
 
 #define SHADER(filename) "resources/shaders/" filename
+#define TEXTURE(filename) "resources/textures/" filename
 #define MODEL(filename) "resources/models/" filename
 
 Game::Game(GLFWwindow* window) : renderer_{window} {
@@ -14,19 +15,21 @@ Game::Game(GLFWwindow* window) : renderer_{window} {
 }
 
 void Game::run() {
-#define LOAD_SHADER(shader, vert, frag)                    \
-  if (!((shader) = renderer_.create_shader(vert, frag))) { \
-    return;                                                \
+#define CHECK(assignee, expr)   \
+  if (!((assignee) = (expr))) { \
+    return;                     \
   }
+
+#define LOAD_SHADER(shader, vert, frag) \
+  CHECK(shader, renderer_.create_shader(vert, frag))
 
   LOAD_SHADER(shader_, SHADER("shader.vert"), SHADER("shader.frag"));
-  LOAD_SHADER(picking_, SHADER("picking.vert"), SHADER("picking.frag"));
+  LOAD_SHADER(picking_, SHADER("shader.vert"), SHADER("picking.frag"));
+  LOAD_SHADER(outlining_, SHADER("outlining.vert"), SHADER("outlining.frag"));
 #undef LOAD_SHADER
 
-#define LOAD_MODEL(model, path)                                          \
-  if (!(models_[to_underlying(model)] = renderer_.create_model(path))) { \
-    return;                                                              \
-  }
+#define LOAD_MODEL(model, path) \
+  CHECK(models_[to_underlying(model)], renderer_.create_model(path))
 
   LOAD_MODEL(ModelType::Board, MODEL("board.gltf"))
   LOAD_MODEL(ModelType::King, MODEL("king.gltf"))
@@ -35,9 +38,21 @@ void Game::run() {
   LOAD_MODEL(ModelType::Knight, MODEL("knight.gltf"))
   LOAD_MODEL(ModelType::Rook, MODEL("rook.gltf"))
   LOAD_MODEL(ModelType::Pawn, MODEL("pawn.gltf"))
+  LOAD_MODEL(ModelType::SelectableTile, MODEL("selectable_tile.gltf"))
 #undef LOAD_MODEL
 
-  picking_texture_ = renderer_.create_framebuffer(k_window_size);
+  CHECK(selectable_tile_.base_color,
+        renderer_.create_texture(TEXTURE("selectable_tile.png")))
+  CHECK(selectable_tile_hover_.base_color,
+        renderer_.create_texture(TEXTURE("selectable_tile_hover.png")))
+  CHECK(picking_texture_, renderer_.create_framebuffer(k_window_size + 1.0F))
+#undef CHECK
+
+  for (int y = 2; y < 6; ++y) {
+    for (int x = 0; x < 8; ++x) {
+      selectable_tiles_.emplace_back(glm::ivec2{x, y}, Piece{});
+    }
+  }
 
   glEnable(GL_DEPTH_TEST);
   glDepthFunc(GL_LESS);
@@ -70,7 +85,7 @@ void Game::run() {
 
 void Game::resize_picking_texture(const glm::vec2& size) {
   Renderer::destroy_framebuffer(picking_texture_);
-  picking_texture_ = renderer_.create_framebuffer(size);
+  picking_texture_ = renderer_.create_framebuffer(size + 1.0F);
   update_picking_texture_ = true;
   LOGF("GAME", "Resized picking texture to {} {}", size.x, size.y);
 }
@@ -78,47 +93,12 @@ void Game::resize_picking_texture(const glm::vec2& size) {
 void Game::update() {}
 
 void Game::draw() {
-  draw_picking_texture();
-
-  renderer_.bind_framebuffer(GL_READ_FRAMEBUFFER, picking_texture_);
-
-  int height{};
-  glfwGetWindowSize(renderer_.get_window(), nullptr, &height);
-
-  glm::ivec2 coord{mouse_last_position_};
-  coord.y = height - coord.y;
-  const int pixel{Renderer::read_pixel(coord)};
-  selected_piece_ = (pixel != -1) ? static_cast<Piece>(pixel) : Piece{};
-
-  renderer_.unbind_framebuffer(GL_READ_FRAMEBUFFER);
+  update_picking_texture();
 
   renderer_.bind_shader(shader_);
-  renderer_.set_shader_uniform(shader_, "outline_thickness", 0.0F);
-  renderer_.set_shader_uniform(shader_, "solid_color", glm::vec4{1.0F});
-  renderer_.set_shader_uniform(shader_, "blend_factor", 1.0F);
-
-  for (const auto& tile : board_.get_active_tiles()) {
-    const Transform transform{calculate_piece_transform(tile)};
-    Model* model = get_model(tile.piece);
-    Material* material = is_piece_color(tile.piece, PieceColor::Black)
-                             ? model->mesh.black
-                             : model->mesh.white;
-
-    if (tile.piece == selected_piece_) {
-      static constexpr glm::vec4 color{0.0F, 1.0F, 0.0F, 1.0F};
-      renderer_.draw_model_outline(transform, model, material, 0.0125F, color);
-      continue;
-    }
-
-    renderer_.draw_model(transform, model, material);
-  }
-
-  Transform transform{};
-  transform.scale = k_game_scale;
-  transform.rotation = -90.0F;
-
-  Model* model = get_model(ModelType::Board);
-  renderer_.draw_model(transform, model, model->mesh.default_);
+  draw_board();
+  draw_pieces();
+  draw_selectable_tiles();
 }
 
 void Game::process_input() {
@@ -128,17 +108,25 @@ void Game::process_input() {
   }
 }
 
-void Game::draw_picking_texture() {
+void Game::update_picking_texture() {
   if (update_picking_texture_) {
     renderer_.bind_shader(picking_);
-    renderer_.bind_framebuffer(GL_DRAW_FRAMEBUFFER, picking_texture_);
+    renderer_.bind_framebuffer(picking_texture_, GL_DRAW_FRAMEBUFFER);
     Renderer::clear_framebuffer();
 
     for (const auto& tile : board_.get_active_tiles()) {
       Model* model = get_model(tile.piece);
       renderer_.set_shader_uniform(picking_, "color",
-                                   to_underlying(tile.piece));
-      renderer_.draw_model(calculate_piece_transform(tile), model, nullptr);
+                                   static_cast<int>(to_underlying(tile.piece)));
+      renderer_.draw_model(calculate_tile_transform(tile), model, nullptr);
+    }
+
+    for (size_t i = 0; i < selectable_tiles_.size(); i++) {
+      const Tile& tile = selectable_tiles_[i];
+      renderer_.set_shader_uniform(picking_, "color",
+                                   static_cast<int>(i << 3U));
+      renderer_.draw_model(calculate_tile_transform(tile),
+                           get_model(ModelType::SelectableTile), nullptr);
     }
 
     renderer_.unbind_framebuffer(GL_DRAW_FRAMEBUFFER);
@@ -148,6 +136,111 @@ void Game::draw_picking_texture() {
 
     update_picking_texture_ = false;
   }
+
+  GLFWwindow* window = renderer_.get_window();
+  if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS) {
+    pixel_ = -1;
+    return;
+  }
+
+  renderer_.bind_framebuffer(picking_texture_, GL_READ_FRAMEBUFFER);
+
+  int height{};
+  glfwGetWindowSize(window, nullptr, &height);
+
+  glm::ivec2 coord{mouse_last_position_};
+  coord.y = height - coord.y;
+  pixel_ = Renderer::read_pixel(coord);
+
+  renderer_.unbind_framebuffer(GL_READ_FRAMEBUFFER);
+}
+
+void Game::draw_board() {
+  Transform transform{};
+  transform.scale = k_game_scale;
+  transform.rotation = -90.0F;
+
+  Model* model = get_model(ModelType::Board);
+  renderer_.draw_model(transform, model, model->mesh.default_);
+}
+
+void Game::draw_pieces() {
+  for (const auto& tile : board_.get_active_tiles()) {
+    const Transform transform{calculate_tile_transform(tile)};
+    Model* model = get_model(tile.piece);
+    Material* material = is_piece_color(tile.piece, PieceColor::Black)
+                             ? model->mesh.black
+                             : model->mesh.white;
+
+    const bool outline{pixel_ == static_cast<int>(tile.piece) ||
+                       selected_piece_ == tile.piece};
+    if (outline) {
+      // renderer_.clear_stencil();
+      renderer_.begin_stencil_writing();
+    }
+
+    renderer_.draw_model(transform, model, material);
+
+    if (outline) {
+      renderer_.end_stencil_writing();
+
+      renderer_.bind_shader(outlining_);
+      renderer_.draw_model_outline(transform, model, 0.0125F, k_outline_color);
+      renderer_.bind_shader(shader_);
+    }
+  }
+}
+
+void Game::draw_selectable_tiles() {
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+  Model* model = get_model(ModelType::SelectableTile);
+
+  uint32_t hovered_index{};
+  if (pixel_is_selectable_tile()) {
+    hovered_index = pixel_as_selectable_tile();
+
+    for (uint32_t i = 0; i < hovered_index; ++i) {
+      const auto& tile = selectable_tiles_[i];
+      renderer_.draw_model(calculate_tile_transform(tile), model,
+                           &selectable_tile_);
+    }
+
+    const auto& tile = selectable_tiles_[hovered_index];
+    renderer_.draw_model(calculate_tile_transform(tile), model,
+                         &selectable_tile_hover_);
+
+    hovered_index += 1;
+  }
+
+  for (uint32_t i = hovered_index; i < selectable_tiles_.size(); ++i) {
+    const auto& tile = selectable_tiles_[i];
+    renderer_.draw_model(calculate_tile_transform(tile), model,
+                         &selectable_tile_);
+  }
+
+  glDisable(GL_BLEND);
+}
+
+bool Game::pixel_is_piece() const {
+  return !(pixel_ < 0) &&
+         !is_piece_type(static_cast<Piece>(pixel_), PieceType::None);
+}
+
+Piece Game::pixel_as_piece() const {
+  assert(!(pixel_ < 0));
+  return static_cast<Piece>(pixel_);
+}
+
+bool Game::pixel_is_selectable_tile() const {
+  return !(pixel_ < 0) &&
+         is_piece_type(static_cast<Piece>(pixel_), PieceType::None);
+}
+
+uint32_t Game::pixel_as_selectable_tile() const {
+  assert(!(pixel_ < 0));
+  return static_cast<uint32_t>(pixel_) >> 3U;
 }
 
 Model* Game::get_model(ModelType type) const {
@@ -171,11 +264,17 @@ Model* Game::get_model(Piece piece) const {
   return nullptr;
 }
 
-Transform Game::calculate_piece_transform(const Tile& tile) {
+void Game::move_piece_to_tile(Piece piece, const Tile& tile) {
+  board_.move_to(piece, tile.coord);
+  update_picking_texture_ = true;
+  selected_piece_ = {};
+}
+
+Transform Game::calculate_tile_transform(const Tile& tile) {
   return {(glm::vec3{-2.03F, 0.174F, 2.03F} +
-           glm::vec3{tile.x, 0, tile.y - 7} * 0.58F) *
+           glm::vec3{tile.coord.x, 0, tile.coord.y - 7} * 0.58F) *
               k_game_scale,
-          is_piece_color(tile.piece, PieceColor::Black) ? -180.0F : 0.0F,
+          is_piece_color(tile.piece, PieceColor::Black) ? 0.0F : -180.0F,
           k_game_scale};
 }
 
@@ -183,11 +282,26 @@ void Game::mouse_button_callback(GLFWwindow* window, int button, int action,
                                  int /*mods*/) {
   auto* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
   if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-    LOGF("GAME", "ID {}", static_cast<int>(game->selected_piece_));
+    const bool has_selected_piece{
+        !is_piece_type(game->selected_piece_, PieceType::None)};
+    if (game->pixel_is_piece()) {
+      game->selected_piece_ = game->pixel_as_piece();
+    } else if (game->pixel_is_selectable_tile() && has_selected_piece) {
+      auto& tile{game->selectable_tiles_[game->pixel_as_selectable_tile()]};
+      game->move_piece_to_tile(game->selected_piece_, tile);
+      std::swap(game->selectable_tiles_.back(), tile);
+      game->selectable_tiles_.pop_back();
+    } else {
+      game->selected_piece_ = {};
+    }
   }
 
   if (button == GLFW_MOUSE_BUTTON_MIDDLE && action == GLFW_RELEASE) {
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+
+    int height{};
+    glfwGetWindowSize(window, nullptr, &height);
+    game->mouse_last_position_ = {0, height};
     game->update_picking_texture_ = true;
   }
 }
@@ -207,8 +321,8 @@ void Game::mouse_move_callback(GLFWwindow* window, double xpos, double ypos) {
   game->mouse_last_position_.y = static_cast<float>(ypos);
 
   if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS) {
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     game->camera_.process_mouse_movement(offset_x, offset_y);
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
   }
 }
 

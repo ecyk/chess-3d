@@ -13,6 +13,8 @@ class Game {
   static constexpr glm::vec3 k_camera_position{0.0F, 40.0F, -40.0F};
   static constexpr glm::vec3 k_camera_target{};
 
+  static constexpr glm::vec4 k_outline_color{0.0F, 1.0F, 0.0F, 1.0F};
+
  public:
   explicit Game(GLFWwindow* window);
 
@@ -26,12 +28,22 @@ class Game {
 
   void process_input();
 
-  void draw_picking_texture();
+  void update_picking_texture();
+  void draw_board();
+  void draw_pieces();
+  void draw_selectable_tiles();
 
   Renderer renderer_;
 
-  Framebuffer* picking_texture_;
+  Framebuffer* picking_texture_{};
   bool update_picking_texture_{true};
+
+  int pixel_{-1};
+
+  [[nodiscard]] bool pixel_is_piece() const;
+  [[nodiscard]] Piece pixel_as_piece() const;
+  [[nodiscard]] bool pixel_is_selectable_tile() const;
+  [[nodiscard]] uint32_t pixel_as_selectable_tile() const;
 
   float delta_time_{};
   float last_frame_{};
@@ -45,6 +57,7 @@ class Game {
 
   Shader* shader_{};
   Shader* picking_{};
+  Shader* outlining_{};
 
   enum class ModelType {
     Board,
@@ -54,6 +67,7 @@ class Game {
     Knight,
     Rook,
     Pawn,
+    SelectableTile,
     Count
   };
 
@@ -64,11 +78,18 @@ class Game {
   [[nodiscard]] Model* get_model(ModelType type) const;
   [[nodiscard]] Model* get_model(Piece piece) const;
 
+  Material selectable_tile_;
+  Material selectable_tile_hover_;
+
   Board board_;
+
+  std::vector<Tile> selectable_tiles_;
 
   Piece selected_piece_{};
 
-  static Transform calculate_piece_transform(const Tile& tile);
+  void move_piece_to_tile(Piece piece, const Tile& tile);
+
+  static Transform calculate_tile_transform(const Tile& tile);
 
   static void mouse_button_callback(GLFWwindow* window, int button, int action,
                                     int mods);
