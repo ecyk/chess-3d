@@ -91,7 +91,41 @@ void Game::resize_picking_texture(const glm::vec2& size) {
   LOGF("GAME", "Resized picking texture to {} {}", size.x, size.y);
 }
 
-void Game::update() {}
+void Game::update() {
+  if (!moves_.empty()) {
+    Move& move = moves_.back();
+    if (move.completed) {
+      return;
+    }
+
+    if (move.angle <= 0.0F) {
+      board_.move_to(move.from.piece, move.to.coord);
+      if (!is_controlling_camera()) {
+        enable_cursor();
+      }
+      update_picking_texture_ = true;
+      move.angle = 0.0F;
+      move.completed = true;
+      return;
+    }
+
+    const glm::vec3 current{calculate_tile_transform(move.from).position};
+    const glm::vec3 target{calculate_tile_transform(move.to).position};
+
+    const glm::vec3 center{(current + target) / 2.0F};
+    const float radius{glm::length(target - current) / 2.0F};
+    const glm::vec3 horizontal{glm::normalize(target - current) *
+                               glm::cos(glm::radians(move.angle))};
+
+    move.position =
+        center + glm::vec3{horizontal.x, glm::sin(glm::radians(move.angle)),
+                           horizontal.z} *
+                     radius;
+
+    move.angle -= 270.0F * delta_time_;
+    move.angle = glm::clamp(move.angle, 0.0F, 180.0F);
+  }
+}
 
 void Game::draw() {
   update_picking_texture();
@@ -138,7 +172,7 @@ void Game::update_picking_texture() {
   }
 
   GLFWwindow* window = renderer_.get_window();
-  if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS) {
+  if (!is_cursor_active()) {
     pixel_ = -1;
     return;
   }
@@ -170,11 +204,21 @@ void Game::draw_board() {
 
 void Game::draw_pieces() {
   for (const auto& tile : board_.get_active_tiles()) {
-    const Transform transform{calculate_tile_transform(tile)};
+    Transform transform{calculate_tile_transform(tile)};
     Model* model = get_model(tile.piece);
     Material* material = is_piece_color(tile.piece, PieceColor::Black)
                              ? model->mesh.black
                              : model->mesh.white;
+
+    if (!moves_.empty()) {
+      const Move& move = moves_.back();
+      if (!move.completed && move.from.coord == tile.coord &&
+          move.from.piece == tile.piece) {
+        transform.position = move.position;
+        renderer_.draw_model(transform, model, material);
+        continue;
+      }
+    }
 
     const bool outline{pixel_ == static_cast<int>(tile.piece) ||
                        selected_piece_ == tile.piece};
@@ -252,6 +296,26 @@ uint32_t Game::pixel_as_selectable_tile() const {
   return static_cast<uint32_t>(pixel_) >> 3U;
 }
 
+bool Game::is_controlling_camera() const {
+  return glfwGetMouseButton(renderer_.get_window(), GLFW_MOUSE_BUTTON_MIDDLE) ==
+         GLFW_PRESS;
+}
+
+bool Game::is_cursor_active() const {
+  return glfwGetInputMode(renderer_.get_window(), GLFW_CURSOR) ==
+         GLFW_CURSOR_NORMAL;
+}
+
+void Game::enable_cursor() {
+  glfwSetInputMode(renderer_.get_window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+  mouse_last_position_ = mouse_last_position_real_;
+}
+
+void Game::disable_cursor() {
+  glfwSetInputMode(renderer_.get_window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+  mouse_last_position_real_ = mouse_last_position_;
+}
+
 Model* Game::get_model(ModelType type) const {
   return models_[to_underlying(type)];
 }
@@ -274,9 +338,13 @@ Model* Game::get_model(Piece piece) const {
 }
 
 void Game::move_piece_to_tile(Piece piece, const Tile& tile) {
-  board_.move_to(piece, tile.coord);
+  const Tile from{board_.get_coord(piece), piece};
+  moves_.push_back(Move{from, tile, calculate_tile_transform(from).position});
+
   update_picking_texture_ = true;
   selected_piece_ = {};
+
+  disable_cursor();
 }
 
 Transform Game::calculate_tile_transform(const Tile& tile) {
@@ -306,11 +374,7 @@ void Game::mouse_button_callback(GLFWwindow* window, int button, int action,
   }
 
   if (button == GLFW_MOUSE_BUTTON_MIDDLE && action == GLFW_RELEASE) {
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-
-    int height{};
-    glfwGetWindowSize(window, nullptr, &height);
-    game->mouse_last_position_ = {0, height};
+    game->enable_cursor();
     game->update_picking_texture_ = true;
   }
 }
@@ -329,9 +393,12 @@ void Game::mouse_move_callback(GLFWwindow* window, double xpos, double ypos) {
   game->mouse_last_position_.x = static_cast<float>(xpos);
   game->mouse_last_position_.y = static_cast<float>(ypos);
 
-  if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS) {
+  if (game->is_controlling_camera()) {
     game->camera_.process_mouse_movement(offset_x, offset_y);
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+    if (game->is_cursor_active()) {
+      game->disable_cursor();
+    }
   }
 }
 

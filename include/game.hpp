@@ -10,7 +10,9 @@ inline constexpr glm::vec2 k_window_size{1280.0F, 720.0F};
 class Game {
   static constexpr float k_game_scale{10.0F};
 
-  static constexpr glm::vec3 k_camera_position{0.0F, 40.0F, -40.0F};
+  static constexpr glm::vec3 k_camera_position_white{0.0F, 40.0F, -40.0F};
+  static constexpr glm::vec3 k_camera_position_black{0.0F, 40.0F, 40.0F};
+  static constexpr glm::vec3 k_camera_position{k_camera_position_white};
   static constexpr glm::vec3 k_camera_target{};
 
   static constexpr glm::vec4 k_outline_color{0.0F, 1.0F, 0.0F, 1.0F};
@@ -54,8 +56,15 @@ class Game {
 
   Camera camera_{k_camera_position, k_camera_target};
 
+  [[nodiscard]] bool is_controlling_camera() const;
+
   glm::vec2 mouse_last_position_{k_window_size / 2.0F};
+  glm::vec2 mouse_last_position_real_{mouse_last_position_};
   bool first_mouse_input_{true};
+
+  [[nodiscard]] bool is_cursor_active() const;
+  void enable_cursor();
+  void disable_cursor();
 
   Shader* shader_{};
   Shader* lighting_{};
@@ -91,6 +100,16 @@ class Game {
   Piece selected_piece_{};
 
   void move_piece_to_tile(Piece piece, const Tile& tile);
+
+  struct Move {
+    Tile from;
+    Tile to;
+    glm::vec3 position{};
+    float angle{180.0F};
+    bool completed{};
+  };
+
+  std::vector<Move> moves_;
 
   static Transform calculate_tile_transform(const Tile& tile);
 
