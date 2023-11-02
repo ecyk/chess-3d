@@ -40,8 +40,8 @@ void Board::reset() {
     init_tile(0, piece_row, 0, color, PieceType::Rook);
     init_tile(1, piece_row, 0, color, PieceType::Knight);
     init_tile(2, piece_row, 0, color, PieceType::Bishop);
-    init_tile(3, piece_row, 0, color, PieceType::Queen);
-    init_tile(4, piece_row, 0, color, PieceType::King);
+    init_tile(3, piece_row, 0, color, PieceType::King);
+    init_tile(4, piece_row, 0, color, PieceType::Queen);
     init_tile(5, piece_row, 1, color, PieceType::Bishop);
     init_tile(6, piece_row, 1, color, PieceType::Knight);
     init_tile(7, piece_row, 1, color, PieceType::Rook);

@@ -15,6 +15,8 @@ class Game {
 
   static constexpr glm::vec4 k_outline_color{0.0F, 1.0F, 0.0F, 1.0F};
 
+  static constexpr glm::vec3 k_light_position{0.0F, 20.0F, 0.0F};
+
  public:
   explicit Game(GLFWwindow* window);
 
@@ -56,6 +58,7 @@ class Game {
   bool first_mouse_input_{true};
 
   Shader* shader_{};
+  Shader* lighting_{};
   Shader* picking_{};
   Shader* outlining_{};
 

@@ -24,6 +24,7 @@ void Game::run() {
   CHECK(shader, renderer_.create_shader(vert, frag))
 
   LOAD_SHADER(shader_, SHADER("shader.vert"), SHADER("shader.frag"));
+  LOAD_SHADER(lighting_, SHADER("lighting.vert"), SHADER("lighting.frag"));
   LOAD_SHADER(picking_, SHADER("shader.vert"), SHADER("picking.frag"));
   LOAD_SHADER(outlining_, SHADER("outlining.vert"), SHADER("outlining.frag"));
 #undef LOAD_SHADER
@@ -95,7 +96,6 @@ void Game::update() {}
 void Game::draw() {
   update_picking_texture();
 
-  renderer_.bind_shader(shader_);
   draw_board();
   draw_pieces();
   draw_selectable_tiles();
@@ -161,6 +161,10 @@ void Game::draw_board() {
   transform.rotation = -90.0F;
 
   Model* model = get_model(ModelType::Board);
+
+  renderer_.bind_shader(lighting_);
+  renderer_.set_shader_uniform(lighting_, "light_pos", k_light_position);
+  renderer_.set_shader_uniform(lighting_, "view_pos", camera_.get_position());
   renderer_.draw_model(transform, model, model->mesh.default_);
 }
 
@@ -186,12 +190,17 @@ void Game::draw_pieces() {
 
       renderer_.bind_shader(outlining_);
       renderer_.draw_model_outline(transform, model, 0.0125F, k_outline_color);
-      renderer_.bind_shader(shader_);
+      renderer_.bind_shader(lighting_);
+      renderer_.set_shader_uniform(lighting_, "light_pos", k_light_position);
+      renderer_.set_shader_uniform(lighting_, "view_pos",
+                                   camera_.get_position());
     }
   }
 }
 
 void Game::draw_selectable_tiles() {
+  renderer_.bind_shader(shader_);
+
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
