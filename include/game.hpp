@@ -44,11 +44,6 @@ class Game {
 
   int pixel_{-1};
 
-  [[nodiscard]] bool pixel_is_piece() const;
-  [[nodiscard]] Piece pixel_as_piece() const;
-  [[nodiscard]] bool pixel_is_selectable_tile() const;
-  [[nodiscard]] uint32_t pixel_as_selectable_tile() const;
-
   float delta_time_{};
   float last_frame_{};
 
@@ -87,23 +82,25 @@ class Game {
 
   Models models_{};
 
-  [[nodiscard]] Model* get_model(ModelType type) const;
   [[nodiscard]] Model* get_model(Piece piece) const;
+  [[nodiscard]] Model* get_model(ModelType type) const;
 
   Material selectable_tile_;
   Material selectable_tile_hover_;
 
   Board board_;
 
-  std::vector<Tile> selectable_tiles_;
+  std::vector<int> selectable_tiles_;
 
-  Piece selected_piece_{};
+  [[nodiscard]] bool is_selectable_tile(int tile) const;
 
-  void move_piece_to_tile(Piece piece, const Tile& tile);
+  int selected_tile_{-1};
+
+  void move_selected_to(int target);
 
   struct Move {
-    Tile from;
-    Tile to;
+    int tile;
+    int target;
     glm::vec3 position{};
     float angle{180.0F};
     bool completed{};
@@ -111,7 +108,10 @@ class Game {
 
   std::vector<Move> moves_;
 
-  static Transform calculate_tile_transform(const Tile& tile);
+  Transform calculate_piece_transform(int tile);
+
+  static glm::vec3 calculate_tile_position(int tile);
+  static Transform calculate_tile_transform(int tile, float rotation = 0.0F);
 
   static void mouse_button_callback(GLFWwindow* window, int button, int action,
                                     int mods);

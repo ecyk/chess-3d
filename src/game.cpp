@@ -49,10 +49,8 @@ void Game::run() {
   CHECK(picking_texture_, renderer_.create_framebuffer(k_window_size + 1.0F))
 #undef CHECK
 
-  for (int y = 2; y < 6; ++y) {
-    for (int x = 0; x < 8; ++x) {
-      selectable_tiles_.emplace_back(glm::ivec2{x, y}, Piece{});
-    }
+  for (int i = 16; i <= 47; i++) {
+    selectable_tiles_.push_back(i);
   }
 
   glEnable(GL_DEPTH_TEST);
@@ -99,7 +97,7 @@ void Game::update() {
     }
 
     if (move.angle <= 0.0F) {
-      board_.move_to(move.from.piece, move.to.coord);
+      board_.move_to(move.tile, move.target);
       if (!is_controlling_camera()) {
         enable_cursor();
       }
@@ -109,12 +107,12 @@ void Game::update() {
       return;
     }
 
-    const glm::vec3 current{calculate_tile_transform(move.from).position};
-    const glm::vec3 target{calculate_tile_transform(move.to).position};
+    const glm::vec3 tile{calculate_tile_position(move.tile)};
+    const glm::vec3 target{calculate_tile_position(move.target)};
 
-    const glm::vec3 center{(current + target) / 2.0F};
-    const float radius{glm::length(target - current) / 2.0F};
-    const glm::vec3 horizontal{glm::normalize(target - current) *
+    const glm::vec3 center{(tile + target) / 2.0F};
+    const float radius{glm::length(target - tile) / 2.0F};
+    const glm::vec3 horizontal{glm::normalize(target - tile) *
                                glm::cos(glm::radians(move.angle))};
 
     move.position =
@@ -148,19 +146,21 @@ void Game::update_picking_texture() {
     renderer_.bind_framebuffer(picking_texture_, GL_DRAW_FRAMEBUFFER);
     Renderer::clear_framebuffer();
 
-    for (const auto& tile : board_.get_active_tiles()) {
-      Model* model = get_model(tile.piece);
-      renderer_.set_shader_uniform(picking_, "color",
-                                   static_cast<int>(to_underlying(tile.piece)));
-      renderer_.draw_model(calculate_tile_transform(tile), model, nullptr);
+    for (int tile = 0; tile < 64; tile++) {
+      const Piece piece{board_.get_tile(tile)};
+      if (piece_type(piece) == PieceType::None) {
+        continue;
+      }
+
+      Model* model = get_model(piece);
+      renderer_.set_shader_uniform(picking_, "color", tile);
+      renderer_.draw_model(calculate_piece_transform(tile), model, nullptr);
     }
 
-    for (size_t i = 0; i < selectable_tiles_.size(); i++) {
-      const Tile& tile = selectable_tiles_[i];
-      renderer_.set_shader_uniform(picking_, "color",
-                                   static_cast<int>(i << 3U));
-      renderer_.draw_model(calculate_tile_transform(tile),
-                           get_model(ModelType::SelectableTile), nullptr);
+    Model* model = get_model(ModelType::SelectableTile);
+    for (const int tile : selectable_tiles_) {
+      renderer_.set_shader_uniform(picking_, "color", tile);
+      renderer_.draw_model(calculate_tile_transform(tile), model, nullptr);
     }
 
     renderer_.unbind_framebuffer(GL_DRAW_FRAMEBUFFER);
@@ -203,25 +203,28 @@ void Game::draw_board() {
 }
 
 void Game::draw_pieces() {
-  for (const auto& tile : board_.get_active_tiles()) {
-    Transform transform{calculate_tile_transform(tile)};
-    Model* model = get_model(tile.piece);
-    Material* material = is_piece_color(tile.piece, PieceColor::Black)
-                             ? model->mesh.black
-                             : model->mesh.white;
+  for (int tile = 0; tile < 64; tile++) {
+    const Piece piece{board_.get_tile(tile)};
+    if (piece_type(piece) == PieceType::None) {
+      continue;
+    }
+
+    Transform transform{calculate_piece_transform(tile)};
+    Model* model = get_model(piece);
+    Material* material = piece_color(piece) == PieceColor::White
+                             ? model->mesh.white
+                             : model->mesh.black;
 
     if (!moves_.empty()) {
       const Move& move = moves_.back();
-      if (!move.completed && move.from.coord == tile.coord &&
-          move.from.piece == tile.piece) {
+      if (!move.completed && move.tile == tile) {
         transform.position = move.position;
         renderer_.draw_model(transform, model, material);
         continue;
       }
     }
 
-    const bool outline{pixel_ == static_cast<int>(tile.piece) ||
-                       selected_piece_ == tile.piece};
+    const bool outline{tile == pixel_ || tile == selected_tile_};
     if (outline) {
       // renderer_.clear_stencil();
       renderer_.begin_stencil_writing();
@@ -250,50 +253,20 @@ void Game::draw_selectable_tiles() {
 
   Model* model = get_model(ModelType::SelectableTile);
 
-  uint32_t hovered_index{};
-  if (pixel_is_selectable_tile()) {
-    hovered_index = pixel_as_selectable_tile();
-
-    for (uint32_t i = 0; i < hovered_index; ++i) {
-      const auto& tile = selectable_tiles_[i];
-      renderer_.draw_model(calculate_tile_transform(tile), model,
-                           &selectable_tile_);
-    }
-
-    const auto& tile = selectable_tiles_[hovered_index];
-    renderer_.draw_model(calculate_tile_transform(tile), model,
-                         &selectable_tile_hover_);
-
-    hovered_index += 1;
+  int hover{-1};
+  if (is_valid_tile(pixel_)) {
+    hover = pixel_;
   }
 
-  for (uint32_t i = hovered_index; i < selectable_tiles_.size(); ++i) {
-    const auto& tile = selectable_tiles_[i];
-    renderer_.draw_model(calculate_tile_transform(tile), model,
-                         &selectable_tile_);
+  for (const int tile : selectable_tiles_) {
+    Material* material{&selectable_tile_};
+    if (tile == hover) {
+      material = &selectable_tile_hover_;
+    }
+    renderer_.draw_model(calculate_tile_transform(tile), model, material);
   }
 
   glDisable(GL_BLEND);
-}
-
-bool Game::pixel_is_piece() const {
-  return !(pixel_ < 0) &&
-         !is_piece_type(static_cast<Piece>(pixel_), PieceType::None);
-}
-
-Piece Game::pixel_as_piece() const {
-  assert(!(pixel_ < 0));
-  return static_cast<Piece>(pixel_);
-}
-
-bool Game::pixel_is_selectable_tile() const {
-  return !(pixel_ < 0) &&
-         is_piece_type(static_cast<Piece>(pixel_), PieceType::None);
-}
-
-uint32_t Game::pixel_as_selectable_tile() const {
-  assert(!(pixel_ < 0));
-  return static_cast<uint32_t>(pixel_) >> 3U;
 }
 
 bool Game::is_controlling_camera() const {
@@ -316,14 +289,12 @@ void Game::disable_cursor() {
   mouse_last_position_real_ = mouse_last_position_;
 }
 
-Model* Game::get_model(ModelType type) const {
-  return models_[to_underlying(type)];
-}
-
 Model* Game::get_model(Piece piece) const {
-#define PIECE_TO_MODEL(piece_type, model_type) \
-  if (is_piece_type(piece, piece_type)) {      \
-    return get_model(model_type);              \
+  const PieceType type{piece_type(piece)};
+
+#define PIECE_TO_MODEL(piece, model) \
+  if (type == (piece)) {             \
+    return get_model(model);         \
   }
 
   PIECE_TO_MODEL(PieceType::King, ModelType::King);
@@ -337,39 +308,57 @@ Model* Game::get_model(Piece piece) const {
   return nullptr;
 }
 
-void Game::move_piece_to_tile(Piece piece, const Tile& tile) {
-  const Tile from{board_.get_coord(piece), piece};
-  moves_.push_back(Move{from, tile, calculate_tile_transform(from).position});
+Model* Game::get_model(ModelType type) const {
+  return models_[to_underlying(type)];
+}
 
-  update_picking_texture_ = true;
-  selected_piece_ = {};
+bool Game::is_selectable_tile(int tile) const {
+  return std::find(selectable_tiles_.begin(), selectable_tiles_.end(), tile) !=
+         selectable_tiles_.end();
+}
+
+void Game::move_selected_to(int target) {
+  moves_.emplace_back(selected_tile_, target,
+                      calculate_tile_position(selected_tile_));
+
+  // selectable_tiles_.clear();
+  selected_tile_ = -1;
 
   disable_cursor();
 }
 
-Transform Game::calculate_tile_transform(const Tile& tile) {
-  return {(glm::vec3{-2.03F, 0.174F, 2.03F} +
-           glm::vec3{tile.coord.x, 0, tile.coord.y - 7} * 0.58F) *
-              k_game_scale,
-          is_piece_color(tile.piece, PieceColor::Black) ? 0.0F : -180.0F,
-          k_game_scale};
+Transform Game::calculate_piece_transform(int tile) {
+  const Piece piece{board_.get_tile(tile)};
+  return calculate_tile_transform(
+      tile, piece_color(piece) == PieceColor::White ? -180.0F : 0.0F);
+}
+
+glm::vec3 Game::calculate_tile_position(int tile) {
+  const glm::ivec2 coord{calculate_tile_coord(tile)};
+  return (glm::vec3{-2.03F, 0.174F, 2.03F} +
+          glm::vec3{coord.x, 0, coord.y - 7} * 0.58F) *
+         k_game_scale;
+}
+
+Transform Game::calculate_tile_transform(int tile, float rotation) {
+  return {calculate_tile_position(tile), rotation, k_game_scale};
 }
 
 void Game::mouse_button_callback(GLFWwindow* window, int button, int action,
                                  int /*mods*/) {
   auto* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
   if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-    const bool has_selected_piece{
-        !is_piece_type(game->selected_piece_, PieceType::None)};
-    if (game->pixel_is_piece()) {
-      game->selected_piece_ = game->pixel_as_piece();
-    } else if (game->pixel_is_selectable_tile() && has_selected_piece) {
-      auto& tile{game->selectable_tiles_[game->pixel_as_selectable_tile()]};
-      game->move_piece_to_tile(game->selected_piece_, tile);
-      std::swap(game->selectable_tiles_.back(), tile);
-      game->selectable_tiles_.pop_back();
+    if (is_valid_tile(game->pixel_)) {
+      const int tile{game->pixel_};
+      const Piece piece{game->board_.get_tile(tile)};
+      if (game->selected_tile_ != -1 && game->is_selectable_tile(tile)) {
+        game->move_selected_to(tile);
+      } else if (piece_type(piece) != PieceType::None) {
+        game->selected_tile_ = tile;
+      }
     } else {
-      game->selected_piece_ = {};
+      // game->selectable_tiles_.clear();
+      game->selected_tile_ = -1;
     }
   }
 

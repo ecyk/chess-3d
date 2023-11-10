@@ -290,7 +290,7 @@ Model* Renderer::create_model(const fs::path& path) {
   const cgltf_accessor* position{};
   const cgltf_accessor* normal{};
   const cgltf_accessor* tex_coord{};
-  for (size_t i = 0; i < primitive->attributes_count; ++i) {
+  for (size_t i = 0; i < primitive->attributes_count; i++) {
     const cgltf_attribute* attribute = &primitive->attributes[i];
     const cgltf_accessor* accessor = attribute->data;
 
@@ -312,7 +312,7 @@ Model* Renderer::create_model(const fs::path& path) {
 
   size_t vertex_count{vertices.size()};
   vertices.resize(vertex_count + position->count);
-  for (size_t i = 0; i < position->count; ++i, ++vertex_count) {
+  for (size_t i = 0; i < position->count; i++, vertex_count++) {
     cgltf_accessor_read_float(
         position, i, glm::value_ptr(vertices[vertex_count].position), 3);
     cgltf_accessor_read_float(normal, i,
@@ -322,7 +322,7 @@ Model* Renderer::create_model(const fs::path& path) {
   }
 
   indices.resize(primitive->indices->count);
-  for (size_t i = 0; i < primitive->indices->count; ++i) {
+  for (size_t i = 0; i < primitive->indices->count; i++) {
     indices[i] = cgltf_accessor_read_index(primitive->indices, i);
   }
 
