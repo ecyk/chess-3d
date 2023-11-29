@@ -49,10 +49,6 @@ void Game::run() {
   CHECK(picking_texture_, renderer_.create_framebuffer(k_window_size + 1.0F))
 #undef CHECK
 
-  for (int i = 16; i <= 47; i++) {
-    selectable_tiles_.push_back(i);
-  }
-
   glEnable(GL_DEPTH_TEST);
   glDepthFunc(GL_LESS);
 
@@ -254,7 +250,7 @@ void Game::draw_selectable_tiles() {
   Model* model = get_model(ModelType::SelectableTile);
 
   int hover{-1};
-  if (is_valid_tile(pixel_)) {
+  if (Board::is_valid_tile(pixel_)) {
     hover = pixel_;
   }
 
@@ -321,7 +317,7 @@ void Game::move_selected_to(int target) {
   moves_.emplace_back(selected_tile_, target,
                       calculate_tile_position(selected_tile_));
 
-  // selectable_tiles_.clear();
+  selectable_tiles_.clear();
   selected_tile_ = -1;
 
   disable_cursor();
@@ -334,9 +330,10 @@ Transform Game::calculate_piece_transform(int tile) {
 }
 
 glm::vec3 Game::calculate_tile_position(int tile) {
-  const glm::ivec2 coord{calculate_tile_coord(tile)};
-  return (glm::vec3{-2.03F, 0.174F, 2.03F} +
-          glm::vec3{coord.x, 0, coord.y - 7} * 0.58F) *
+  return (glm::vec3{-2.03F, 0.174F, -2.03F} +
+          glm::vec3{7 - Board::get_tile_column(tile), 0,
+                    Board::get_tile_row(tile)} *
+              0.58F) *
          k_game_scale;
 }
 
@@ -348,24 +345,27 @@ void Game::mouse_button_callback(GLFWwindow* window, int button, int action,
                                  int /*mods*/) {
   auto* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
   if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-    if (is_valid_tile(game->pixel_)) {
+    if (Board::is_valid_tile(game->pixel_)) {
       const int tile{game->pixel_};
       const Piece piece{game->board_.get_tile(tile)};
       if (game->selected_tile_ != -1 && game->is_selectable_tile(tile)) {
         game->move_selected_to(tile);
       } else if (piece_type(piece) != PieceType::None) {
         game->selected_tile_ = tile;
+        game->selectable_tiles_.clear();
+        game->board_.get_moves(game->selectable_tiles_, tile);
       }
     } else {
-      // game->selectable_tiles_.clear();
+      game->selectable_tiles_.clear();
       game->selected_tile_ = -1;
     }
   }
 
   if (button == GLFW_MOUSE_BUTTON_MIDDLE && action == GLFW_RELEASE) {
     game->enable_cursor();
-    game->update_picking_texture_ = true;
   }
+
+  game->update_picking_texture_ = true;
 }
 
 void Game::mouse_move_callback(GLFWwindow* window, double xpos, double ypos) {

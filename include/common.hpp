@@ -11,6 +11,8 @@
 
 #include "log.hpp"
 
+#define ASSERT(expression) assert(expression)
+
 namespace fs = std::filesystem;
 
 template <typename E>

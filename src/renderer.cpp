@@ -177,7 +177,7 @@ Texture* Renderer::create_texture(const fs::path& path) {
       format = GL_RGBA;
       break;
     default:
-      assert(false && "Unknown format");
+      ASSERT(false && "Unknown format");
       break;
   }
 
@@ -242,11 +242,11 @@ Model* Renderer::create_model(const fs::path& path) {
   std::vector<Vertex> vertices;
   std::vector<unsigned int> indices;
 
-  assert(data->scene->nodes_count == 1);
+  ASSERT(data->scene->nodes_count == 1);
   const cgltf_node* node = data->scene->nodes[0];
 
-  assert(node->children_count == 0);
-  assert(node->mesh->primitives_count == 1);
+  ASSERT(node->children_count == 0);
+  ASSERT(node->mesh->primitives_count == 1);
   const cgltf_primitive* primitive = &node->mesh->primitives[0];
 
   auto create_material = [this](const fs::path& parent,
@@ -276,7 +276,7 @@ Model* Renderer::create_model(const fs::path& path) {
     material = create_material(path.parent_path(), primitive->material);
   }
 
-  assert(primitive->mappings_count == 0 || primitive->mappings_count == 2);
+  ASSERT(primitive->mappings_count == 0 || primitive->mappings_count == 2);
 
   Material* white{};
   Material* black{};
@@ -305,7 +305,7 @@ Model* Renderer::create_model(const fs::path& path) {
         tex_coord = accessor;
         break;
       default:
-        assert(false && "Unknown attribute type");
+        ASSERT(false && "Unknown attribute type");
         break;
     }
   }
