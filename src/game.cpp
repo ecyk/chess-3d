@@ -2,6 +2,8 @@
 
 #include <GLFW/glfw3.h>
 
+#include <random>
+
 #define SHADER(filename) "resources/shaders/" filename
 #define TEXTURE(filename) "resources/textures/" filename
 #define MODEL(filename) "resources/models/" filename
@@ -12,6 +14,10 @@ Game::Game(GLFWwindow* window) : renderer_{window} {
   glfwSetMouseButtonCallback(window, mouse_button_callback);
   glfwSetCursorPosCallback(window, mouse_move_callback);
   glfwSetScrollCallback(window, mouse_scroll_callback);
+
+  glfwSetKeyCallback(window, key_callback);
+
+  active_move_.is_completed = true;
 }
 
 void Game::run() {
@@ -86,39 +92,81 @@ void Game::resize_picking_texture(const glm::vec2& size) {
 }
 
 void Game::update() {
-  if (!moves_.empty()) {
-    Move& move = moves_.back();
-    if (move.completed) {
-      return;
-    }
-
-    if (move.angle <= 0.0F) {
-      board_.move_to(move.tile, move.target);
-      if (!is_controlling_camera()) {
-        enable_cursor();
+  if (active_move_.is_completed) {
+    const auto& records{board_.get_records()};
+    if (!records.empty() &&
+        board_.get_color(records.back().move.target) != ai_color_) {
+      if (active_move_.is_undo) {
+        undo();
+        return;
       }
-      update_picking_texture_ = true;
-      move.angle = 0.0F;
-      move.completed = true;
-      return;
+
+      if (board_.is_game_over()) {
+        return;
+      }
+
+      std::random_device rd;
+      std::mt19937 mt{rd()};
+      std::uniform_int_distribution<std::mt19937::result_type> dist{0, 63};
+      while (true) {
+        const auto tile{static_cast<int>(dist(mt))};
+        if (board_.get_color(tile) == ai_color_) {
+          Board::Moves moves;
+          board_.get_moves(moves, tile);
+
+          if (moves.empty()) {
+            continue;
+          }
+
+          active_move_ = {};
+          active_move_.tile = tile;
+          active_move_.target =
+              moves[std::uniform_int_distribution<std::mt19937::result_type>{
+                  0, static_cast<unsigned int>(moves.size()) - 1}(mt)];
+          active_move_.position = calculate_tile_position(tile);
+          break;
+        }
+      }
     }
-
-    const glm::vec3 tile{calculate_tile_position(move.tile)};
-    const glm::vec3 target{calculate_tile_position(move.target)};
-
-    const glm::vec3 center{(tile + target) / 2.0F};
-    const float radius{glm::length(target - tile) / 2.0F};
-    const glm::vec3 horizontal{glm::normalize(target - tile) *
-                               glm::cos(glm::radians(move.angle))};
-
-    move.position =
-        center + glm::vec3{horizontal.x, glm::sin(glm::radians(move.angle)),
-                           horizontal.z} *
-                     radius;
-
-    move.angle -= 270.0F * delta_time_;
-    move.angle = glm::clamp(move.angle, 0.0F, 180.0F);
+    return;
   }
+
+  if (active_move_.angle <= 0.0F) {
+    if (active_move_.is_undo) {
+      board_.undo();
+    } else {
+      PieceType promotion{};
+      if (board_.get_type(active_move_.tile) == PieceType::Pawn &&
+          (active_move_.target < 8 || active_move_.target > 55)) {
+        promotion = PieceType::Queen;
+      }
+      board_.move({active_move_.tile, active_move_.target, promotion});
+    }
+    if (!is_controlling_camera()) {
+      enable_cursor();
+    }
+    update_picking_texture_ = true;
+    active_move_.angle = 0.0F;
+    active_move_.is_completed = true;
+    return;
+  }
+
+  const glm::vec3 tile{calculate_tile_position(active_move_.tile)};
+  const glm::vec3 target{calculate_tile_position(active_move_.target)};
+
+  const glm::vec3 center{(tile + target) / 2.0F};
+  const float radius{glm::length(target - tile) / 2.0F};
+  const glm::vec3 horizontal{glm::normalize(target - tile) *
+                             glm::cos(glm::radians(active_move_.angle))};
+
+  active_move_.position =
+      center + glm::vec3{horizontal.x,
+                         glm::sin(glm::radians(active_move_.angle)),
+                         horizontal.z} *
+                   radius;
+
+  active_move_.angle -= 270.0F * delta_time_;
+  active_move_.angle = glm::clamp(active_move_.angle, 0.0F, 180.0F);
 }
 
 void Game::draw() {
@@ -211,13 +259,10 @@ void Game::draw_pieces() {
                              ? model->mesh.white
                              : model->mesh.black;
 
-    if (!moves_.empty()) {
-      const Move& move = moves_.back();
-      if (!move.completed && move.tile == tile) {
-        transform.position = move.position;
-        renderer_.draw_model(transform, model, material);
-        continue;
-      }
+    if (!active_move_.is_completed && active_move_.tile == tile) {
+      transform.position = active_move_.position;
+      renderer_.draw_model(transform, model, material);
+      continue;
     }
 
     const bool outline{tile == pixel_ || tile == selected_tile_};
@@ -314,13 +359,33 @@ bool Game::is_selectable_tile(int tile) const {
 }
 
 void Game::move_selected_to(int target) {
-  moves_.emplace_back(selected_tile_, target,
-                      calculate_tile_position(selected_tile_));
+  if (board_.get_records().empty()) {
+    ai_color_ = board_.get_color(selected_tile_) == PieceColor::White
+                    ? PieceColor::Black
+                    : PieceColor::White;
+  }
+
+  active_move_ = {};
+  active_move_.tile = selected_tile_;
+  active_move_.target = target;
+  active_move_.position = calculate_tile_position(selected_tile_);
 
   selectable_tiles_.clear();
   selected_tile_ = -1;
 
   disable_cursor();
+}
+
+void Game::undo() {
+  const auto& records{board_.get_records()};
+  if (!records.empty()) {
+    const auto& record{records.back()};
+    active_move_ = {};
+    active_move_.tile = record.move.target;
+    active_move_.target = record.move.tile;
+    active_move_.position = calculate_tile_position(record.move.target);
+    active_move_.is_undo = true;
+  }
 }
 
 Transform Game::calculate_piece_transform(int tile) {
@@ -395,5 +460,21 @@ void Game::mouse_scroll_callback(GLFWwindow* window, double /*xoffset*/,
                                  double yoffset) {
   auto* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
   game->camera_.process_mouse_scroll(static_cast<float>(yoffset));
+  game->update_picking_texture_ = true;
+}
+
+void Game::key_callback(GLFWwindow* window, int key, int /*scancode*/,
+                        int action, int /*mods*/) {
+  auto* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
+  if (!game->active_move_.is_completed) {
+    return;
+  }
+  if (key == GLFW_KEY_U && action == GLFW_PRESS) {
+    game->undo();
+  } else if (key == GLFW_KEY_R && action == GLFW_PRESS) {
+    game->board_.reset();
+  }
+  game->selectable_tiles_.clear();
+  game->selected_tile_ = -1;
   game->update_picking_texture_ = true;
 }

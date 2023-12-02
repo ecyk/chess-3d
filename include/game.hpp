@@ -96,17 +96,21 @@ class Game {
 
   int selected_tile_{-1};
 
-  void move_selected_to(int target);
-
-  struct Move {
-    int tile;
-    int target;
+  struct ActiveMove {
+    int tile{-1};
+    int target{-1};
     glm::vec3 position{};
     float angle{180.0F};
-    bool completed{};
+    bool is_completed{};
+    bool is_undo{};
   };
 
-  std::vector<Move> moves_;
+  ActiveMove active_move_;
+
+  void move_selected_to(int target);
+  void undo();
+
+  PieceColor ai_color_{};
 
   Transform calculate_piece_transform(int tile);
 
@@ -118,4 +122,7 @@ class Game {
   static void mouse_move_callback(GLFWwindow* window, double xpos, double ypos);
   static void mouse_scroll_callback(GLFWwindow* window, double xoffset,
                                     double yoffset);
+
+  static void key_callback(GLFWwindow* window, int key, int /*scancode*/,
+                           int action, int /*mods*/);
 };
