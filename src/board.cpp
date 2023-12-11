@@ -88,7 +88,7 @@ void Board::undo() {
   if (record.move.promotion != PieceType::None) {
     set_tile(record.move.tile,
              make_piece(
-                 record.move.target < 8 ? PieceColor::White : PieceColor::Black,
+                 record.move.target < 8 ? PieceColor::Black : PieceColor::White,
                  PieceType::Pawn));
   }
 
