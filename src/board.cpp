@@ -1,22 +1,24 @@
 #include "board.hpp"
 
-Board::Board() { reset(); }
+Board::Board() { load_fen(); }
 
-void Board::move(const Move& move) {
+void Board::move(Move move) {
   ASSERT(get_color(move.tile) != PieceColor::None &&
          get_type(move.tile) != PieceType::None);
 
-  const MoveRecord& record{records_.emplace_back(
-      move, get_tile(move.target), castling_rights_, enpassant_tile_)};
+  const MoveRecord& record{
+      records_.emplace_back(move, move.promotion, get_tile(move.target),
+                            castling_rights_, enpassant_tile_)};
   set_tile(move.target, get_tile(move.tile));
   set_tile(move.tile, {});
 
+  turn_ = get_opposite_color(turn_);
   enpassant_tile_ = -1;
 
-  const uint8_t moved_color_index{get_color_index(move.target)};
-  if (castling_rights_[moved_color_index] != CastlingRight::None &&
-      piece_type(record.captured_piece) == PieceType::Rook) {
-    clear_castling_rights(move.target, piece_color(record.captured_piece));
+  const uint8_t color_index{get_color_index(get_color(move.target))};
+  if (castling_rights_[color_index] != CastlingRight::None &&
+      get_piece_type(record.captured_piece) == PieceType::Rook) {
+    clear_castling_rights(move.target, get_piece_color(record.captured_piece));
   }
 
   switch (get_type(move.target)) {
@@ -26,11 +28,11 @@ void Board::move(const Move& move) {
         set_tile((move.tile + move.target) / 2, get_tile(rook_tile));
         set_tile(rook_tile, {});
       }
-      castling_rights_[moved_color_index] = CastlingRight::None;
-      king_tiles_[moved_color_index] = move.target;
+      castling_rights_[color_index] = CastlingRight::None;
+      king_tiles_[color_index] = move.target;
       break;
     case PieceType::Rook:
-      if (castling_rights_[moved_color_index] != CastlingRight::None) {
+      if (castling_rights_[color_index] != CastlingRight::None) {
         clear_castling_rights(move.tile, get_color(move.target));
       }
       break;
@@ -46,7 +48,7 @@ void Board::move(const Move& move) {
       } else if (move.promotion != PieceType::None) {
         set_tile(move.target,
                  make_piece(get_color(move.target), move.promotion));
-      }
+      };
       break;
     default:
       break;
@@ -82,16 +84,18 @@ void Board::undo() {
               PieceType::Rook));
       set_tile((record.move.tile + record.move.target) / 2, {});
     }
-    king_tiles_[get_color_index(record.move.tile)] = record.move.tile;
+    king_tiles_[get_color_index(get_color(record.move.tile))] =
+        record.move.tile;
   }
 
-  if (record.move.promotion != PieceType::None) {
+  if (record.promotion != PieceType::None) {
     set_tile(record.move.tile,
              make_piece(
                  record.move.target < 8 ? PieceColor::Black : PieceColor::White,
                  PieceType::Pawn));
   }
 
+  turn_ = get_opposite_color(turn_);
   castling_rights_ = record.castling_rights;
   enpassant_tile_ = record.enpassant_tile;
 
@@ -99,12 +103,7 @@ void Board::undo() {
 }
 
 void Board::get_moves(Moves& moves, int tile) {
-  if (!records_.empty()) {
-    const MoveRecord& record{records_.back()};
-    if (get_color(record.move.target) != get_color(tile)) {
-      generate_legal_moves(moves, tile);
-    }
-  } else {
+  if (turn_ == get_color(tile)) {
     generate_legal_moves(moves, tile);
   }
 }
@@ -115,68 +114,156 @@ bool Board::is_game_over() {
   }
 
   Moves moves;
-  const auto& record{records_.back()};
-  const PieceColor turn{get_opposite_color(get_color(record.move.target))};
   for (int i = 0; i < 64; i++) {
-    if (get_color(i) == turn) {
+    if (turn_ == get_color(i)) {
       get_moves(moves, i);
 
-      if (!moves.empty()) {
+      if (moves.size != 0) {
         return false;
       }
 
-      moves.clear();
-    }
+      moves = {};
+    };
   }
 
   return true;
 }
 
-void Board::reset() {
-  castling_rights_ = {CastlingRight::Both, CastlingRight::Both};
-  king_tiles_ = {60, 4};
-  enpassant_tile_ = -1;
-  tiles_.fill({});
-  records_.clear();
+uint64_t Board::perft(int depth) {
+  Moves moves;
 
-  auto init_pieces = [this](PieceColor color, int piece_row, int pawn_row) {
-    auto init_piece = [this](int tile, PieceColor color, PieceType type) {
-      set_tile(tile, make_piece(color, type));
-    };
+  uint64_t nodes{};
+  if (depth == 0) {
+    return 1;
+  }
 
-    init_piece(8 * piece_row + 0, color, PieceType::Rook);
-    init_piece(8 * piece_row + 1, color, PieceType::Knight);
-    init_piece(8 * piece_row + 2, color, PieceType::Bishop);
-    init_piece(8 * piece_row + 3, color, PieceType::Queen);
-    init_piece(8 * piece_row + 4, color, PieceType::King);
-    init_piece(8 * piece_row + 5, color, PieceType::Bishop);
-    init_piece(8 * piece_row + 6, color, PieceType::Knight);
-    init_piece(8 * piece_row + 7, color, PieceType::Rook);
-
-    for (uint8_t i = 0; i < 8; i++) {
-      init_piece(8 * pawn_row + i, color, PieceType::Pawn);
+  for (int i = 0; i < 64; i++) {
+    if (get_color(i) != turn_) {
+      continue;
     }
-  };
+    generate_moves(moves, i);
+  }
 
-  init_pieces(PieceColor::White, 0, 1);
-  init_pieces(PieceColor::Black, 7, 6);
+  for (int i = 0; i < moves.size; i++) {
+    move(moves.data[i]);
+    if (!is_in_check()) {
+      nodes += perft(depth - 1);
+    }
+    undo();
+  }
+
+  return nodes;
 }
+
+void Board::load_fen(std::string_view fen) {
+  reset();
+
+  std::array<std::string_view, 6> parts{};
+  for (int i = 0, begin = 0, end = 0; i < 6; i++) {
+    begin = end;
+    end = fen.find_first_of(' ', begin + 1);
+    parts[i] = fen.substr(begin, end - begin);
+    end++;  // Skip whitespace
+  }
+
+  for (int i = 0, tile = 0; i < parts[0].length(); i++) {
+    const char ch{parts[0][i]};
+
+    if (ch == '/') {
+      continue;
+    }
+
+    if (ch >= '0' && ch <= '8') {
+      tile += ch - '0';
+      continue;
+    }
+
+    auto color{PieceColor::Black};
+    if (ch >= 'A' && ch < 'Z') {
+      color = PieceColor::White;
+    }
+
+    const int tile_rot{8 * (7 - get_tile_row(tile)) + get_tile_column(tile)};
+
+    PieceType type{};
+    switch (ch) {
+      case 'K':
+        king_tiles_[1] = tile_rot;
+      case 'k':
+        type = PieceType::King;
+        if (ch == 'K') {
+          break;
+        }
+        king_tiles_[0] = tile_rot;
+        break;
+      case 'Q':
+      case 'q':
+        type = PieceType::Queen;
+        break;
+      case 'B':
+      case 'b':
+        type = PieceType::Bishop;
+        break;
+      case 'N':
+      case 'n':
+        type = PieceType::Knight;
+        break;
+      case 'R':
+      case 'r':
+        type = PieceType::Rook;
+        break;
+      case 'P':
+      case 'p':
+        type = PieceType::Pawn;
+        break;
+      default:
+        break;
+    }
+
+    if (type != PieceType::None) {
+      set_tile(tile_rot, make_piece(color, type));
+    }
+    tile++;
+  }
+
+  if (parts[1] == "w") {
+    turn_ = PieceColor::White;
+  } else if (parts[1] == "b") {
+    turn_ = PieceColor::Black;
+  }
+
+  for (const char ch : parts[2]) {
+    switch (ch) {
+      case 'K':
+        set_castling_right(1, CastlingRight::Short);
+        break;
+      case 'k':
+        set_castling_right(0, CastlingRight::Short);
+        break;
+      case 'Q':
+        set_castling_right(1, CastlingRight::Long);
+        break;
+      case 'q':
+        set_castling_right(0, CastlingRight::Long);
+        break;
+      default:
+        break;
+    }
+  }
+
+  if (parts[3] != "-") {
+    enpassant_tile_ = 8 * (parts[3][1] - '0' - 1) + (parts[3][0] - 'a');
+  }
+};
 
 void Board::generate_legal_moves(Moves& moves, int tile) {
   Moves possible_moves;
   generate_moves(possible_moves, tile);
-
-  const PieceColor attacker_color{get_opposite_color(get_color(tile))};
-  const uint8_t color_index{get_color_index(tile)};
-
-  for (const int target : possible_moves) {
-    move({tile, target});
-
-    const int king_tile{king_tiles_[color_index]};
-    if (!is_threatened(king_tile, attacker_color)) {
-      moves.push_back(target);
+  for (int i = 0; i < possible_moves.size; i++) {
+    move(possible_moves.data[i]);
+    if (!is_in_check()) {
+      moves.data[moves.size++] = possible_moves.data[i];
     }
-
     undo();
   }
 }
@@ -200,6 +287,13 @@ void Board::generate_moves(Moves& moves, int tile) const {
     }                                                                       \
   }
 
+  auto add_move = [this](Moves& moves, int tile, int target) {
+    ASSERT(get_color(tile) != PieceColor::None);
+    if (get_color(tile) != get_color(target)) {
+      moves.data[moves.size++] = {tile, target};
+    }
+  };
+
   switch (tile_type) {
     case PieceType::King:
       CHECK_MOVE_OFFSET(1, col < 7);
@@ -210,30 +304,36 @@ void Board::generate_moves(Moves& moves, int tile) const {
       CHECK_MOVE_OFFSET(-7, row > 0 && col < 7);
       CHECK_MOVE_OFFSET(-8, row > 0);
       CHECK_MOVE_OFFSET(-9, row > 0 && col > 0);
-
-      if (tile == 4 && castling_rights_[1] != CastlingRight::None) {
-        CHECK_MOVE_OFFSET(2, (castling_rights_[1] == CastlingRight::Short ||
-                              castling_rights_[1] == CastlingRight::Both) &&
+      if (tile == 4 && castling_rights_[1] != CastlingRight::None &&
+          !is_threatened(4, PieceColor::Black)) {
+        CHECK_MOVE_OFFSET(2, is_piece(7, PieceColor::White, PieceType::Rook) &&
+                                 (castling_rights_[1] == CastlingRight::Short ||
+                                  castling_rights_[1] == CastlingRight::Both) &&
                                  is_empty(5) && is_empty(6) &&
                                  !is_threatened(5, PieceColor::Black) &&
                                  !is_threatened(6, PieceColor::Black));
-        CHECK_MOVE_OFFSET(-2, (castling_rights_[1] == CastlingRight::Long ||
+        CHECK_MOVE_OFFSET(-2,
+                          is_piece(0, PieceColor::White, PieceType::Rook) &&
+                              (castling_rights_[1] == CastlingRight::Long ||
                                castling_rights_[1] == CastlingRight::Both) &&
-                                  is_empty(1) && is_empty(2) && is_empty(3) &&
-                                  !is_threatened(2, PieceColor::Black) &&
-                                  !is_threatened(3, PieceColor::Black));
-      } else if (tile == 60 && castling_rights_[0] != CastlingRight::None) {
-        CHECK_MOVE_OFFSET(2, (castling_rights_[0] == CastlingRight::Short ||
-                              castling_rights_[0] == CastlingRight::Both) &&
+                              is_empty(1) && is_empty(2) && is_empty(3) &&
+                              !is_threatened(2, PieceColor::Black) &&
+                              !is_threatened(3, PieceColor::Black));
+      } else if (tile == 60 && castling_rights_[0] != CastlingRight::None &&
+                 !is_threatened(60, PieceColor::White)) {
+        CHECK_MOVE_OFFSET(2, is_piece(63, PieceColor::Black, PieceType::Rook) &&
+                                 (castling_rights_[0] == CastlingRight::Short ||
+                                  castling_rights_[0] == CastlingRight::Both) &&
                                  is_empty(61) && is_empty(62) &&
                                  !is_threatened(61, PieceColor::White) &&
                                  !is_threatened(62, PieceColor::White));
-        CHECK_MOVE_OFFSET(-2, (castling_rights_[0] == CastlingRight::Long ||
+        CHECK_MOVE_OFFSET(-2,
+                          is_piece(56, PieceColor::Black, PieceType::Rook) &&
+                              (castling_rights_[0] == CastlingRight::Long ||
                                castling_rights_[0] == CastlingRight::Both) &&
-                                  is_empty(57) && is_empty(58) &&
-                                  is_empty(59) &&
-                                  !is_threatened(58, PieceColor::White) &&
-                                  !is_threatened(59, PieceColor::White));
+                              is_empty(57) && is_empty(58) && is_empty(59) &&
+                              !is_threatened(58, PieceColor::White) &&
+                              !is_threatened(59, PieceColor::White));
       }
       break;
     case PieceType::Queen:
@@ -242,7 +342,6 @@ void Board::generate_moves(Moves& moves, int tile) const {
       CHECK_MOVE_DIRECTION(9, target < 64 && get_tile_column(target) != 0);
       CHECK_MOVE_DIRECTION(-7, target >= 0 && get_tile_column(target) != 0);
       CHECK_MOVE_DIRECTION(-9, target >= 0 && get_tile_column(target) != 7);
-
       if (tile_type == PieceType::Bishop) {
         break;
       }
@@ -262,41 +361,61 @@ void Board::generate_moves(Moves& moves, int tile) const {
       CHECK_MOVE_OFFSET(-15, target >= 0 && col < 7);
       CHECK_MOVE_OFFSET(-17, target >= 0 && col > 0);
       break;
-    case PieceType::Pawn:
+    case PieceType::Pawn: {
+#define CHECK_PAWN_MOVE_OFFSET(offset, condition)      \
+  if (const int target = tile + (offset); condition) { \
+    add_pawn_move(moves, tile, target);                \
+  }
+
+      auto add_pawn_move = [this](Moves& moves, int tile, int target) {
+        ASSERT(get_color(tile) != PieceColor::None);
+        if (get_color(tile) != get_color(target)) {
+          if (target >= 8 && target < 56) {
+            moves.data[moves.size++] = {tile, target};
+            return;
+          }
+          moves.data[moves.size++] = {tile, target, PieceType::Queen};
+          moves.data[moves.size++] = {tile, target, PieceType::Rook};
+          moves.data[moves.size++] = {tile, target, PieceType::Bishop};
+          moves.data[moves.size++] = {tile, target, PieceType::Knight};
+        }
+      };
+
       switch (get_color(tile)) {
         case PieceColor::Black:
-          CHECK_MOVE_OFFSET(-8, is_empty(target));
+          CHECK_PAWN_MOVE_OFFSET(-8, is_empty(target));
           CHECK_MOVE_OFFSET(
               -16, tile >= 48 && is_empty(tile - 8) && is_empty(target));
-          CHECK_MOVE_OFFSET(
+          CHECK_PAWN_MOVE_OFFSET(
               -7, col < 7 && (get_color(target) == PieceColor::White ||
                               (target == enpassant_tile_ &&
                                get_color(target) == PieceColor::None)));
-          CHECK_MOVE_OFFSET(
+          CHECK_PAWN_MOVE_OFFSET(
               -9, col > 0 && (get_color(target) == PieceColor::White ||
                               (target == enpassant_tile_ &&
                                get_color(target) == PieceColor::None)));
           break;
         case PieceColor::White:
-          CHECK_MOVE_OFFSET(8, is_empty(target));
+          CHECK_PAWN_MOVE_OFFSET(8, is_empty(target));
           CHECK_MOVE_OFFSET(
               16, tile < 16 && is_empty(tile + 8) && is_empty(target));
-          CHECK_MOVE_OFFSET(
+          CHECK_PAWN_MOVE_OFFSET(
               7, col > 0 && (get_color(target) == PieceColor::Black ||
                              (target == enpassant_tile_ &&
                               get_color(target) == PieceColor::None)));
-          CHECK_MOVE_OFFSET(
+          CHECK_PAWN_MOVE_OFFSET(
               9, col < 7 && (get_color(target) == PieceColor::Black ||
                              (target == enpassant_tile_ &&
                               get_color(target) == PieceColor::None)));
           break;
         default:
-          ASSERT(false && "Unreachable");
           break;
       }
-      break;
+    }
+
+#undef CHECK_PAWN_MOVE_OFFSET
+    break;
     default:
-      ASSERT(false && "Unreachable");
       break;
   }
 
@@ -339,55 +458,40 @@ bool Board::is_threatened(int tile, PieceColor attacker_color) const {
     break;                                                                  \
   }
 
-  // Up
   CHECK_THREAT_DIRECTION(
       8, target < 64,
       target_type == PieceType::Queen || target_type == PieceType::Rook ||
           (target_type == PieceType::King && target == tile + 8));
-
-  // Down
   CHECK_THREAT_DIRECTION(
       -8, target >= 0,
       target_type == PieceType::Queen || target_type == PieceType::Rook ||
           (target_type == PieceType::King && target == tile - 8));
-
-  // Left
   CHECK_THREAT_DIRECTION(
       -1, target >= tile - col,
       target_type == PieceType::Queen || target_type == PieceType::Rook ||
           (target_type == PieceType::King && target == tile - 1));
-
-  // Right
   CHECK_THREAT_DIRECTION(
       1, target < tile - col + 8,
       target_type == PieceType::Queen || target_type == PieceType::Rook ||
           (target_type == PieceType::King && target == tile + 1));
-
-  // Up left
   CHECK_THREAT_DIRECTION(
       7, target < 64 && get_tile_column(target) != 7,
       target_type == PieceType::Queen || target_type == PieceType::Bishop ||
           (target == tile + 7 && (target_type == PieceType::King ||
                                   (target_type == PieceType::Pawn &&
                                    target_color == PieceColor::Black))));
-
-  // Up right
   CHECK_THREAT_DIRECTION(
       9, target < 64 && get_tile_column(target) != 0,
       target_type == PieceType::Queen || target_type == PieceType::Bishop ||
           (target == tile + 9 && (target_type == PieceType::King ||
                                   (target_type == PieceType::Pawn &&
                                    target_color == PieceColor::Black))));
-
-  // Down right
   CHECK_THREAT_DIRECTION(
       -7, target >= 0 && get_tile_column(target) != 0,
       target_type == PieceType::Queen || target_type == PieceType::Bishop ||
           (target == tile - 7 && (target_type == PieceType::King ||
                                   (target_type == PieceType::Pawn &&
                                    target_color == PieceColor::White))));
-
-  // Down left
   CHECK_THREAT_DIRECTION(
       -9, target >= 0 && get_tile_column(target) != 7,
       target_type == PieceType::Queen || target_type == PieceType::Bishop ||
@@ -400,39 +504,49 @@ bool Board::is_threatened(int tile, PieceColor attacker_color) const {
   return false;
 }
 
-void Board::add_move(Moves& moves, int from, int to) const {
-  ASSERT(get_color(from) != PieceColor::None);
+bool Board::is_in_check() {
+  return is_threatened(king_tiles_[get_color_index(get_opposite_color(turn_))],
+                       turn_);
+}
 
-  if (get_color(from) != get_color(to)) {
-    moves.push_back(to);
-  }
+void Board::reset() {
+  castling_rights_ = {};
+  king_tiles_ = {};
+  enpassant_tile_ = -1;
+  tiles_.fill({});
+  records_.clear();
+}
+
+void Board::set_castling_right(int index, CastlingRight right) {
+  castling_rights_[index] = static_cast<CastlingRight>(
+      to_underlying(castling_rights_[index]) | to_underlying(right));
+}
+
+void Board::clear_castling_right(int index, CastlingRight right) {
+  castling_rights_[index] = static_cast<CastlingRight>(
+      to_underlying(castling_rights_[index]) & ~to_underlying(right));
 }
 
 void Board::clear_castling_rights(int tile, PieceColor color) {
-  auto clear_right = [this](int index, CastlingRight right) {
-    castling_rights_[index] = static_cast<CastlingRight>(
-        to_underlying(castling_rights_[index]) & ~to_underlying(right));
-  };
-
   switch (tile) {
     case 0:
       if (color == PieceColor::White) {
-        clear_right(1, CastlingRight::Long);
+        clear_castling_right(1, CastlingRight::Long);
       }
       break;
     case 7:
       if (color == PieceColor::White) {
-        clear_right(1, CastlingRight::Short);
+        clear_castling_right(1, CastlingRight::Short);
       }
       break;
     case 56:
       if (color == PieceColor::Black) {
-        clear_right(0, CastlingRight::Long);
+        clear_castling_right(0, CastlingRight::Long);
       }
       break;
     case 63:
       if (color == PieceColor::Black) {
-        clear_right(0, CastlingRight::Short);
+        clear_castling_right(0, CastlingRight::Short);
       }
       break;
     default:

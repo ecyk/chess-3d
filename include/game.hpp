@@ -90,7 +90,7 @@ class Game {
 
   Board board_;
 
-  std::vector<int> selectable_tiles_;
+  Board::Moves selectable_tiles_;
 
   [[nodiscard]] bool is_selectable_tile(int tile) const;
 

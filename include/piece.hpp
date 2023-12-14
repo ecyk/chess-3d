@@ -16,11 +16,20 @@ enum class PieceType : uint8_t {
 
 enum class Piece : uint8_t;
 
-inline constexpr PieceColor piece_color(Piece piece) {
+inline constexpr PieceColor get_piece_color(Piece piece) {
   return static_cast<PieceColor>(to_underlying(piece) & 24U);
 }
 
-inline constexpr PieceType piece_type(Piece piece) {
+inline constexpr uint8_t get_color_index(PieceColor color) {
+  ASSERT(color != PieceColor::None);
+  return (to_underlying(color) >> 3U) - 1;
+}
+
+inline constexpr PieceColor get_opposite_color(PieceColor color) {
+  return color == PieceColor::White ? PieceColor::Black : PieceColor::White;
+}
+
+inline constexpr PieceType get_piece_type(Piece piece) {
   return static_cast<PieceType>(to_underlying(piece) & 7U);
 }
 

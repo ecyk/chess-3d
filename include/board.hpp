@@ -2,6 +2,20 @@
 
 #include "piece.hpp"
 
+inline constexpr bool is_valid_tile(int tile) {
+  return 0 <= tile && tile <= 63;
+}
+
+inline constexpr int get_tile_row(int tile) {
+  ASSERT(is_valid_tile(tile));
+  return static_cast<uint8_t>(tile) >> 3U;
+}
+
+inline constexpr int get_tile_column(int tile) {
+  ASSERT(is_valid_tile(tile));
+  return static_cast<uint8_t>(tile) & 7U;
+}
+
 class Board {
   struct Move {
     int tile{-1};
@@ -15,6 +29,7 @@ class Board {
 
   struct MoveRecord {
     Move move;
+    PieceType promotion{};
     Piece captured_piece{};
     CastlingRights castling_rights{};
     int enpassant_tile{};
@@ -22,76 +37,69 @@ class Board {
 
   using Records = std::vector<MoveRecord>;
 
+  static constexpr std::string_view DEFAULT_FEN{
+      "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"};
+
  public:
-  using Moves = std::vector<int>;
+  struct Moves {
+    int size{};
+    std::array<Move, 256> data{};
+  };
 
   Board();
 
-  void move(const Move& move);
+  void move(Move move);
   void undo();
 
   void get_moves(Moves& moves, int tile);
   bool is_game_over();
 
-  void reset();
+  uint64_t perft(int depth);
+
+  void load_fen(std::string_view fen = DEFAULT_FEN);
 
   [[nodiscard]] Piece get_tile(int tile) const { return tiles_[tile]; }
 
   [[nodiscard]] PieceColor get_color(int tile) const {
-    return piece_color(get_tile(tile));
+    return get_piece_color(get_tile(tile));
   }
 
   [[nodiscard]] PieceType get_type(int tile) const {
-    return piece_type(get_tile(tile));
-  }
-
-  [[nodiscard]] bool is_empty(int tile) const {
-    return piece_type(get_tile(tile)) == PieceType::None;
+    return get_piece_type(get_tile(tile));
   }
 
   [[nodiscard]] const Records& get_records() const { return records_; }
 
-  static int get_tile_row(int tile) {
-    ASSERT(is_valid_tile(tile));
-    return static_cast<uint8_t>(tile) >> 3U;
-  }
-
-  static int get_tile_column(int tile) {
-    ASSERT(is_valid_tile(tile));
-    return static_cast<uint8_t>(tile) & 7U;
-  }
-
-  static bool is_valid_tile(int tile) { return 0 <= tile && tile <= 63; }
-
  private:
   void set_tile(int tile, Piece piece) { tiles_[tile] = piece; }
+
+  [[nodiscard]] bool is_piece(int tile, PieceColor color,
+                              PieceType type) const {
+    return get_color(tile) == color && get_type(tile) == type;
+  }
+
+  [[nodiscard]] bool is_empty(int tile) const {
+    return get_piece_type(get_tile(tile)) == PieceType::None;
+  }
 
   void generate_legal_moves(Moves& moves, int tile);
   void generate_moves(Moves& moves, int tile) const;
   [[nodiscard]] bool is_threatened(int tile, PieceColor attacker_color) const;
+  bool is_in_check();
 
-  void add_move(Moves& moves, int from, int to) const;
+  void reset();
 
-  [[nodiscard]] uint8_t get_color_index(int tile) const {
-    return get_color_index(get_color(tile));
-  }
-
-  [[nodiscard]] static uint8_t get_color_index(PieceColor color) {
-    ASSERT(color != PieceColor::None);
-    return (to_underlying(color) >> 3U) - 1;
-  }
-
-  [[nodiscard]] static PieceColor get_opposite_color(PieceColor color) {
-    return color == PieceColor::White ? PieceColor::Black : PieceColor::White;
-  }
+  PieceColor turn_{};
 
   // Black, white
-  CastlingRights castling_rights_{CastlingRight::Both, CastlingRight::Both};
+  CastlingRights castling_rights_{};
 
+  void set_castling_right(int index, CastlingRight right);
+  void clear_castling_right(int index, CastlingRight right);
   void clear_castling_rights(int tile, PieceColor color);
 
   // Black, white
-  std::array<int, 2> king_tiles_{60, 4};
+  std::array<int, 2> king_tiles_{};
 
   int enpassant_tile_{-1};
   std::array<Piece, 64> tiles_{};

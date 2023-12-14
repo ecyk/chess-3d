@@ -20,6 +20,7 @@ Checks: '*,
     -cppcoreguidelines-pro-type-union-access,
     -cppcoreguidelines-avoid-magic-numbers,
     -cppcoreguidelines-pro-type-reinterpret-cast,
+    -cppcoreguidelines-pro-bounds-constant-array-index,
     -misc-non-private-member-variables-in-classes,
 '
 WarningsAsErrors: ''
