@@ -15,6 +15,38 @@ void Board::move(Move move) {
   turn_ = get_opposite_color(turn_);
   enpassant_tile_ = -1;
 
+  auto clear_castling_rights = [this](int tile, PieceColor color) {
+    auto clear_castling_right = [this](int color_index, CastlingRight right) {
+      castling_rights_[color_index] = static_cast<CastlingRight>(
+          to_underlying(castling_rights_[color_index]) & ~to_underlying(right));
+    };
+
+    switch (tile) {
+      case 0:
+        if (color == PieceColor::White) {
+          clear_castling_right(1, CastlingRight::Long);
+        }
+        break;
+      case 7:
+        if (color == PieceColor::White) {
+          clear_castling_right(1, CastlingRight::Short);
+        }
+        break;
+      case 56:
+        if (color == PieceColor::Black) {
+          clear_castling_right(0, CastlingRight::Long);
+        }
+        break;
+      case 63:
+        if (color == PieceColor::Black) {
+          clear_castling_right(0, CastlingRight::Short);
+        }
+        break;
+      default:
+        break;
+    }
+  };
+
   const uint8_t color_index{get_color_index(get_color(move.target))};
   if (castling_rights_[color_index] != CastlingRight::None &&
       get_piece_type(record.captured_piece) == PieceType::Rook) {
@@ -102,53 +134,41 @@ void Board::undo() {
   records_.pop_back();
 }
 
-void Board::get_moves(Moves& moves, int tile) {
-  if (turn_ == get_color(tile)) {
+void Board::generate_all_legal_moves(Moves& moves) {
+  for (int tile = 0; tile < 64; tile++) {
     generate_legal_moves(moves, tile);
   }
 }
 
-bool Board::is_game_over() {
-  if (records_.empty()) {
-    return false;
+void Board::generate_legal_moves(Moves& moves, int tile) {
+  if (turn_ != get_color(tile)) {
+    return;
   }
-
-  Moves moves;
-  for (int i = 0; i < 64; i++) {
-    if (turn_ == get_color(i)) {
-      get_moves(moves, i);
-
-      if (moves.size != 0) {
-        return false;
-      }
-
-      moves = {};
-    };
+  int end{moves.size};
+  generate_moves(moves, tile);
+  for (int i = end; i < moves.size; i++) {
+    move(moves.data[i]);
+    turn_ = get_opposite_color(turn_);
+    if (!is_in_check()) {
+      moves.data[end++] = moves.data[i];
+    }
+    turn_ = get_opposite_color(turn_);
+    undo();
   }
-
-  return true;
+  moves.size = end;
 }
 
 uint64_t Board::perft(int depth) {
-  Moves moves;
-
   uint64_t nodes{};
   if (depth == 0) {
     return 1;
   }
 
-  for (int i = 0; i < 64; i++) {
-    if (get_color(i) != turn_) {
-      continue;
-    }
-    generate_moves(moves, i);
-  }
-
+  Moves moves;
+  generate_all_legal_moves(moves);
   for (int i = 0; i < moves.size; i++) {
     move(moves.data[i]);
-    if (!is_in_check()) {
-      nodes += perft(depth - 1);
-    }
+    nodes += perft(depth - 1);
     undo();
   }
 
@@ -156,12 +176,17 @@ uint64_t Board::perft(int depth) {
 }
 
 void Board::load_fen(std::string_view fen) {
-  reset();
+  turn_ = {};
+  castling_rights_ = {};
+  king_tiles_ = {};
+  enpassant_tile_ = -1;
+  tiles_ = {};
+  records_ = {};
 
   std::array<std::string_view, 6> parts{};
   for (int i = 0, begin = 0, end = 0; i < 6; i++) {
     begin = end;
-    end = fen.find_first_of(' ', begin + 1);
+    end = static_cast<int>(fen.find_first_of(' ', begin + 1));
     parts[i] = fen.substr(begin, end - begin);
     end++;  // Skip whitespace
   }
@@ -232,6 +257,11 @@ void Board::load_fen(std::string_view fen) {
     turn_ = PieceColor::Black;
   }
 
+  auto set_castling_right = [this](int index, CastlingRight right) {
+    castling_rights_[index] = static_cast<CastlingRight>(
+        to_underlying(castling_rights_[index]) | to_underlying(right));
+  };
+
   for (const char ch : parts[2]) {
     switch (ch) {
       case 'K':
@@ -256,16 +286,15 @@ void Board::load_fen(std::string_view fen) {
   }
 };
 
-void Board::generate_legal_moves(Moves& moves, int tile) {
-  Moves possible_moves;
-  generate_moves(possible_moves, tile);
-  for (int i = 0; i < possible_moves.size; i++) {
-    move(possible_moves.data[i]);
-    if (!is_in_check()) {
-      moves.data[moves.size++] = possible_moves.data[i];
+bool Board::has_legal_moves() {
+  Moves moves;
+  for (int tile = 0; tile < 64; tile++) {
+    generate_legal_moves(moves, tile);
+    if (moves.size != 0) {
+      return true;
     }
-    undo();
   }
+  return false;
 }
 
 void Board::generate_moves(Moves& moves, int tile) const {
@@ -502,54 +531,4 @@ bool Board::is_threatened(int tile, PieceColor attacker_color) const {
 #undef CHECK_THREAT_DIRECTION
 
   return false;
-}
-
-bool Board::is_in_check() {
-  return is_threatened(king_tiles_[get_color_index(get_opposite_color(turn_))],
-                       turn_);
-}
-
-void Board::reset() {
-  castling_rights_ = {};
-  king_tiles_ = {};
-  enpassant_tile_ = -1;
-  tiles_.fill({});
-  records_.clear();
-}
-
-void Board::set_castling_right(int index, CastlingRight right) {
-  castling_rights_[index] = static_cast<CastlingRight>(
-      to_underlying(castling_rights_[index]) | to_underlying(right));
-}
-
-void Board::clear_castling_right(int index, CastlingRight right) {
-  castling_rights_[index] = static_cast<CastlingRight>(
-      to_underlying(castling_rights_[index]) & ~to_underlying(right));
-}
-
-void Board::clear_castling_rights(int tile, PieceColor color) {
-  switch (tile) {
-    case 0:
-      if (color == PieceColor::White) {
-        clear_castling_right(1, CastlingRight::Long);
-      }
-      break;
-    case 7:
-      if (color == PieceColor::White) {
-        clear_castling_right(1, CastlingRight::Short);
-      }
-      break;
-    case 56:
-      if (color == PieceColor::Black) {
-        clear_castling_right(0, CastlingRight::Long);
-      }
-      break;
-    case 63:
-      if (color == PieceColor::Black) {
-        clear_castling_right(0, CastlingRight::Short);
-      }
-      break;
-    default:
-      break;
-  }
 }

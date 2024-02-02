@@ -26,6 +26,7 @@ inline constexpr uint8_t get_color_index(PieceColor color) {
 }
 
 inline constexpr PieceColor get_opposite_color(PieceColor color) {
+  ASSERT(color != PieceColor::None);
   return color == PieceColor::White ? PieceColor::Black : PieceColor::White;
 }
 

@@ -52,7 +52,7 @@ void Game::run() {
         renderer_.create_texture(TEXTURE("selectable_tile.png")))
   CHECK(selectable_tile_hover_.base_color,
         renderer_.create_texture(TEXTURE("selectable_tile_hover.png")))
-  CHECK(picking_texture_, renderer_.create_framebuffer(k_window_size + 1.0F))
+  CHECK(picking_texture_, renderer_.create_framebuffer(k_window_size))
 #undef CHECK
 
   glEnable(GL_DEPTH_TEST);
@@ -86,50 +86,38 @@ void Game::run() {
 
 void Game::resize_picking_texture(const glm::vec2& size) {
   Renderer::destroy_framebuffer(picking_texture_);
-  picking_texture_ = renderer_.create_framebuffer(size + 1.0F);
+  picking_texture_ = renderer_.create_framebuffer(size);
   update_picking_texture_ = true;
   LOGF("GAME", "Resized picking texture to {} {}", size.x, size.y);
 }
 
 void Game::update() {
+  if (game_over_) {
+    return;
+  }
+
   if (active_move_.is_completed) {
-    const auto& records{board_.get_records()};
-    if (!records.empty() &&
-        board_.get_color(records.back().move.target) != ai_color_) {
+    const bool checkmate{board_.is_in_checkmate()};
+    const bool draw{board_.is_in_draw()};
+    if (checkmate) {
+      LOGF("GAME", "{} won!",
+           board_.get_turn() == PieceColor::White ? "Black" : "White");
+    }
+    if (draw) {
+      LOGF("GAME", "Draw!");
+    }
+    if (checkmate || draw) {
+      enable_cursor();
+      game_over_ = true;
+      return;
+    }
+
+    if (board_.get_turn() == ai_color_) {
       if (active_move_.is_undo) {
         undo();
         return;
       }
-
-      if (board_.is_game_over()) {
-        return;
-      }
-
-      std::random_device rd;
-      std::mt19937 mt{rd()};
-      std::uniform_int_distribution<std::mt19937::result_type> dist{0, 63};
-      while (true) {
-        const auto tile{static_cast<int>(dist(mt))};
-        if (board_.get_color(tile) == ai_color_) {
-          Board::Moves moves;
-          board_.get_moves(moves, tile);
-
-          if (moves.size == 0) {
-            continue;
-          }
-
-          active_move_ = {};
-          active_move_.tile = tile;
-          active_move_.target =
-              moves
-                  .data
-                      [std::uniform_int_distribution<std::mt19937::result_type>{
-                          0, static_cast<unsigned int>(moves.size) - 1}(mt)]
-                  .target;
-          active_move_.position = calculate_tile_position(tile);
-          break;
-        }
-      }
+      set_active_move(ai_.think());
     }
     return;
   }
@@ -137,6 +125,10 @@ void Game::update() {
   if (active_move_.angle <= 0.0F) {
     if (active_move_.is_undo) {
       board_.undo();
+      if (board_.get_records().empty()) {
+        active_move_ = {};
+        ai_color_ = PieceColor::None;
+      }
     } else {
       PieceType promotion{};
       if (board_.get_type(active_move_.tile) == PieceType::Pawn &&
@@ -145,12 +137,12 @@ void Game::update() {
       }
       board_.move({active_move_.tile, active_move_.target, promotion});
     }
-    if (!is_controlling_camera()) {
+    active_move_.angle = 0.0F;
+    active_move_.is_completed = true;
+    if (!is_controlling_camera() && board_.get_turn() != ai_color_) {
       enable_cursor();
     }
     update_picking_texture_ = true;
-    active_move_.angle = 0.0F;
-    active_move_.is_completed = true;
     return;
   }
 
@@ -251,25 +243,42 @@ void Game::draw_board() {
 }
 
 void Game::draw_pieces() {
+  bool is_in_check{};
+  if (board_.is_in_checkmate() || board_.is_in_check()) {
+    is_in_check = true;
+  }
+
   for (int tile = 0; tile < 64; tile++) {
-    const Piece piece{board_.get_tile(tile)};
-    if (get_piece_type(piece) == PieceType::None) {
+    if (board_.is_empty(tile)) {
       continue;
     }
 
     Transform transform{calculate_piece_transform(tile)};
-    Model* model = get_model(piece);
-    Material* material = get_piece_color(piece) == PieceColor::White
+    Model* model = get_model(board_.get_tile(tile));
+    Material* material = board_.get_color(tile) == PieceColor::White
                              ? model->mesh.white
                              : model->mesh.black;
 
-    if (!active_move_.is_completed && active_move_.tile == tile) {
-      transform.position = active_move_.position;
-      renderer_.draw_model(transform, model, material);
-      continue;
+    if (!active_move_.is_completed) {
+      if (active_move_.tile == tile) {
+        transform.position = active_move_.position;
+        renderer_.draw_model(transform, model, material);
+        continue;
+      }
+
+      if (active_move_.target == tile && active_move_.angle <= 45.0F) {
+        continue;
+      }
     }
 
-    const bool outline{tile == pixel_ || tile == selected_tile_};
+    const bool outline_hover{tile == pixel_};
+    const bool outline_selected{tile == selected_tile_};
+    const bool outline_king{
+        is_in_check &&
+        board_.is_piece(tile, board_.get_turn(), PieceType::King)};
+    const bool outline_attackable{is_selectable_tile(tile)};
+    const bool outline{outline_hover || outline_selected ||
+                       outline_attackable || outline_king};
     if (outline) {
       // renderer_.clear_stencil();
       renderer_.begin_stencil_writing();
@@ -281,7 +290,12 @@ void Game::draw_pieces() {
       renderer_.end_stencil_writing();
 
       renderer_.bind_shader(outlining_);
-      renderer_.draw_model_outline(transform, model, 0.0125F, k_outline_color);
+      glm::vec4 outline_color{k_picking_outline_color};
+      if (!outline_hover && !outline_selected && !outline_attackable &&
+          outline_king) {
+        outline_color = k_check_outline_color;
+      }
+      renderer_.draw_model_outline(transform, model, 0.0125F, outline_color);
       renderer_.bind_shader(lighting_);
       renderer_.set_shader_uniform(lighting_, "light_pos", k_light_position);
       renderer_.set_shader_uniform(lighting_, "view_pos",
@@ -359,39 +373,28 @@ Model* Game::get_model(ModelType type) const {
 }
 
 bool Game::is_selectable_tile(int tile) const {
-  for (int i = 0; i < selectable_tiles_.size; ++i) {
-    if (selectable_tiles_.data[i].target == tile) {
-      return true;
-    }
-  }
-  return false;
+  const auto begin{selectable_tiles_.data.begin()};
+  const auto end{begin + selectable_tiles_.size};
+  return std::find_if(begin, end, [tile](const Move& move) {
+           return move.target == tile;
+         }) != end;
 }
 
-void Game::move_selected_to(int target) {
-  if (board_.get_records().empty()) {
-    ai_color_ = get_opposite_color(board_.get_color(selected_tile_));
-  }
-
+void Game::set_active_move(const Move& move, bool is_undo) {
   active_move_ = {};
-  active_move_.tile = selected_tile_;
-  active_move_.target = target;
-  active_move_.position = calculate_tile_position(selected_tile_);
-
-  selectable_tiles_ = {};
-  selected_tile_ = -1;
-
+  active_move_.tile = is_undo ? move.target : move.tile;
+  active_move_.target = is_undo ? move.tile : move.target;
+  active_move_.position = calculate_tile_position(active_move_.tile);
+  active_move_.is_undo = is_undo;
+  clear_selections();
   disable_cursor();
 }
 
 void Game::undo() {
   const auto& records{board_.get_records()};
   if (!records.empty()) {
-    const auto& record{records.back()};
-    active_move_ = {};
-    active_move_.tile = record.move.target;
-    active_move_.target = record.move.tile;
-    active_move_.position = calculate_tile_position(record.move.target);
-    active_move_.is_undo = true;
+    set_active_move(records.back().move, true);
+    game_over_ = false;
   }
 }
 
@@ -419,23 +422,25 @@ void Game::mouse_button_callback(GLFWwindow* window, int button, int action,
       const int tile{game->pixel_};
       const Piece piece{game->board_.get_tile(tile)};
       if (game->selected_tile_ != -1 && game->is_selectable_tile(tile)) {
-        game->move_selected_to(tile);
+        game->set_active_move({game->selected_tile_, tile});
       } else if (get_piece_type(piece) != PieceType::None) {
-        game->selectable_tiles_ = {};
-        game->board_.get_moves(game->selectable_tiles_, tile);
-        game->selected_tile_ = tile;
+        if (game->board_.get_records().empty()) {
+          game->ai_color_ = get_opposite_color(game->board_.get_color(tile));
+        }
+        game->clear_selections();
+        game->board_.generate_legal_moves(game->selectable_tiles_, tile);
+        if (game->selectable_tiles_.size != 0) {
+          game->selected_tile_ = tile;
+        }
       }
     } else {
-      game->selectable_tiles_ = {};
-      game->selected_tile_ = -1;
+      game->clear_selections();
     }
   }
 
   if (button == GLFW_MOUSE_BUTTON_MIDDLE && action == GLFW_RELEASE) {
     game->enable_cursor();
   }
-
-  game->update_picking_texture_ = true;
 }
 
 void Game::mouse_move_callback(GLFWwindow* window, double xpos, double ypos) {
@@ -458,6 +463,8 @@ void Game::mouse_move_callback(GLFWwindow* window, double xpos, double ypos) {
     if (game->is_cursor_active()) {
       game->disable_cursor();
     }
+
+    game->update_picking_texture_ = true;
   }
 }
 
@@ -478,8 +485,8 @@ void Game::key_callback(GLFWwindow* window, int key, int /*scancode*/,
     game->undo();
   } else if (key == GLFW_KEY_R && action == GLFW_PRESS) {
     game->board_.load_fen();
+    game->ai_color_ = PieceColor::None;
+    game->game_over_ = false;
   }
-  game->selectable_tiles_ = {};
-  game->selected_tile_ = -1;
-  game->update_picking_texture_ = true;
+  game->clear_selections();
 }

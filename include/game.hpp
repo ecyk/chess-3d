@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ai.hpp"
 #include "board.hpp"
 #include "renderer.hpp"
 
@@ -15,7 +16,8 @@ class Game {
   static constexpr glm::vec3 k_camera_position{k_camera_position_white};
   static constexpr glm::vec3 k_camera_target{};
 
-  static constexpr glm::vec4 k_outline_color{0.0F, 1.0F, 0.0F, 1.0F};
+  static constexpr glm::vec4 k_picking_outline_color{0.0F, 1.0F, 0.0F, 1.0F};
+  static constexpr glm::vec4 k_check_outline_color{1.0F, 0.0F, 0.0F, 1.0F};
 
   static constexpr glm::vec3 k_light_position{0.0F, 20.0F, 0.0F};
 
@@ -90,27 +92,36 @@ class Game {
 
   Board board_;
 
-  Board::Moves selectable_tiles_;
+  Moves selectable_tiles_;
 
   [[nodiscard]] bool is_selectable_tile(int tile) const;
 
   int selected_tile_{-1};
+
+  void clear_selections() {
+    selectable_tiles_ = {};
+    selected_tile_ = -1;
+    update_picking_texture_ = true;
+  }
 
   struct ActiveMove {
     int tile{-1};
     int target{-1};
     glm::vec3 position{};
     float angle{180.0F};
-    bool is_completed{};
     bool is_undo{};
+    bool is_completed{};
   };
 
   ActiveMove active_move_;
 
-  void move_selected_to(int target);
+  void set_active_move(const Move& move, bool is_undo = false);
   void undo();
 
+  AI ai_{board_};
   PieceColor ai_color_{};
+
+  bool game_over_{};
 
   Transform calculate_piece_transform(int tile);
 
@@ -122,7 +133,6 @@ class Game {
   static void mouse_move_callback(GLFWwindow* window, double xpos, double ypos);
   static void mouse_scroll_callback(GLFWwindow* window, double xoffset,
                                     double yoffset);
-
   static void key_callback(GLFWwindow* window, int key, int /*scancode*/,
                            int action, int /*mods*/);
 };
