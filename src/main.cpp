@@ -53,10 +53,9 @@ void error_callback(int /*error_code*/, const char* description) {
   LOG("GLFW", description);
 }
 
-void framebuffer_resize_callback(GLFWwindow* window, int width, int height) {
-  auto* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
+void framebuffer_resize_callback(GLFWwindow* /*window*/, int width,
+                                 int height) {
   glViewport(0, 0, width, height);
-  game->resize_picking_texture({width, height});
 }
 
 GLFWwindow* glfw_init() {
@@ -75,8 +74,9 @@ GLFWwindow* glfw_init() {
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
-  GLFWwindow* window{glfwCreateWindow(k_window_size.x, k_window_size.y, "Chess",
-                                      nullptr, nullptr)};
+  GLFWwindow* window{glfwCreateWindow(static_cast<int>(k_window_size.x),
+                                      static_cast<int>(k_window_size.y),
+                                      "chess-3d", nullptr, nullptr)};
   if (window == nullptr) {
     LOG("GLFW", "Failed to initialize window");
     glfw_destroy();

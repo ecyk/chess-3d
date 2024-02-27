@@ -16,7 +16,7 @@ int AI::search(int depth) {
   Move best_move;
   Moves all_legal_moves;
   board_->generate_all_legal_moves(all_legal_moves);
-  ASSERT(all_legal_moves.size != 0);
+  assert(all_legal_moves.size != 0);
   for (int i = 0; i < all_legal_moves.size; i++) {
     const Move& move = all_legal_moves.data[i];
     board_->move(move);

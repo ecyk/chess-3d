@@ -10,23 +10,16 @@ inline constexpr glm::vec2 k_window_size{1280.0F, 720.0F};
 
 class Game {
   static constexpr float k_game_scale{10.0F};
-
-  static constexpr glm::vec3 k_camera_position_white{0.0F, 40.0F, -40.0F};
-  static constexpr glm::vec3 k_camera_position_black{0.0F, 40.0F, 40.0F};
-  static constexpr glm::vec3 k_camera_position{k_camera_position_white};
+  static constexpr glm::vec3 k_camera_position{0.0F, 40.0F, -40.0F};
   static constexpr glm::vec3 k_camera_target{};
-
   static constexpr glm::vec4 k_picking_outline_color{0.0F, 1.0F, 0.0F, 1.0F};
   static constexpr glm::vec4 k_check_outline_color{1.0F, 0.0F, 0.0F, 1.0F};
-
-  static constexpr glm::vec3 k_light_position{0.0F, 20.0F, 0.0F};
+  static constexpr glm::vec3 k_light_position{0.0F, 25.0F, 0.0F};
 
  public:
   explicit Game(GLFWwindow* window);
 
   void run();
-
-  void resize_picking_texture(const glm::vec2& size);
 
  private:
   void update();
@@ -34,15 +27,11 @@ class Game {
 
   void process_input();
 
-  void update_picking_texture();
-  void draw_board();
+  void draw_picking_texture();
   void draw_pieces();
   void draw_selectable_tiles();
 
   Renderer renderer_;
-
-  Framebuffer* picking_texture_{};
-  bool update_picking_texture_{true};
 
   int pixel_{-1};
 
@@ -51,9 +40,9 @@ class Game {
 
   float time_passed_{};
 
-  Camera camera_{k_camera_position, k_camera_target};
-
   [[nodiscard]] bool is_controlling_camera() const;
+
+  Camera camera_{k_camera_position, k_camera_target};
 
   glm::vec2 mouse_last_position_{k_window_size / 2.0F};
   glm::vec2 mouse_last_position_real_{mouse_last_position_};
@@ -63,32 +52,7 @@ class Game {
   void enable_cursor();
   void disable_cursor();
 
-  Shader* shader_{};
-  Shader* lighting_{};
-  Shader* picking_{};
-  Shader* outlining_{};
-
-  enum class ModelType {
-    Board,
-    King,
-    Queen,
-    Bishop,
-    Knight,
-    Rook,
-    Pawn,
-    SelectableTile,
-    Count
-  };
-
-  using Models = std::array<Model*, to_underlying(ModelType::Count)>;
-
-  Models models_{};
-
-  [[nodiscard]] Model* get_model(Piece piece) const;
-  [[nodiscard]] Model* get_model(ModelType type) const;
-
-  Material selectable_tile_;
-  Material selectable_tile_hover_;
+  [[nodiscard]] static std::string_view get_model_name(Piece piece);
 
   Board board_;
 
@@ -101,7 +65,6 @@ class Game {
   void clear_selections() {
     selectable_tiles_ = {};
     selected_tile_ = -1;
-    update_picking_texture_ = true;
   }
 
   struct ActiveMove {

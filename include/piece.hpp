@@ -21,12 +21,12 @@ inline constexpr PieceColor get_piece_color(Piece piece) {
 }
 
 inline constexpr uint8_t get_color_index(PieceColor color) {
-  ASSERT(color != PieceColor::None);
+  assert(color != PieceColor::None);
   return (to_underlying(color) >> 3U) - 1;
 }
 
 inline constexpr PieceColor get_opposite_color(PieceColor color) {
-  ASSERT(color != PieceColor::None);
+  assert(color != PieceColor::None);
   return color == PieceColor::White ? PieceColor::Black : PieceColor::White;
 }
 

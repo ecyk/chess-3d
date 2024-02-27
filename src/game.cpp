@@ -5,10 +5,9 @@
 #include <random>
 
 #define SHADER(filename) "resources/shaders/" filename
-#define TEXTURE(filename) "resources/textures/" filename
 #define MODEL(filename) "resources/models/" filename
 
-Game::Game(GLFWwindow* window) : renderer_{window} {
+Game::Game(GLFWwindow* window) : renderer_{window, camera_} {
   glfwSetWindowUserPointer(window, this);
 
   glfwSetMouseButtonCallback(window, mouse_button_callback);
@@ -21,49 +20,25 @@ Game::Game(GLFWwindow* window) : renderer_{window} {
 }
 
 void Game::run() {
-#define CHECK(assignee, expr)   \
-  if (!((assignee) = (expr))) { \
-    return;                     \
+#define CHECK(expr) \
+  if (!(expr)) {    \
+    return;         \
   }
-
-#define LOAD_SHADER(shader, vert, frag) \
-  CHECK(shader, renderer_.create_shader(vert, frag))
-
-  LOAD_SHADER(shader_, SHADER("shader.vert"), SHADER("shader.frag"));
-  LOAD_SHADER(lighting_, SHADER("lighting.vert"), SHADER("lighting.frag"));
-  LOAD_SHADER(picking_, SHADER("shader.vert"), SHADER("picking.frag"));
-  LOAD_SHADER(outlining_, SHADER("outlining.vert"), SHADER("outlining.frag"));
-#undef LOAD_SHADER
-
-#define LOAD_MODEL(model, path) \
-  CHECK(models_[to_underlying(model)], renderer_.create_model(path))
-
-  LOAD_MODEL(ModelType::Board, MODEL("board.gltf"))
-  LOAD_MODEL(ModelType::King, MODEL("king.gltf"))
-  LOAD_MODEL(ModelType::Queen, MODEL("queen.gltf"))
-  LOAD_MODEL(ModelType::Bishop, MODEL("bishop.gltf"))
-  LOAD_MODEL(ModelType::Knight, MODEL("knight.gltf"))
-  LOAD_MODEL(ModelType::Rook, MODEL("rook.gltf"))
-  LOAD_MODEL(ModelType::Pawn, MODEL("pawn.gltf"))
-  LOAD_MODEL(ModelType::SelectableTile, MODEL("selectable_tile.gltf"))
-#undef LOAD_MODEL
-
-  CHECK(selectable_tile_.base_color,
-        renderer_.create_texture(TEXTURE("selectable_tile.png")))
-  CHECK(selectable_tile_hover_.base_color,
-        renderer_.create_texture(TEXTURE("selectable_tile_hover.png")))
-  CHECK(picking_texture_, renderer_.create_framebuffer(k_window_size))
+  // clang-format off
+  CHECK(renderer_.load_shader("basic", {SHADER("basic.vert"), SHADER("basic.frag")}))
+  CHECK(renderer_.load_shader("lighting", {SHADER("lighting.vert"), SHADER("lighting.frag")}))
+  CHECK(renderer_.load_shader("picking", {SHADER("basic.vert"), SHADER("picking.frag")}))
+  CHECK(renderer_.load_shader("outlining", {SHADER("outlining.vert"), SHADER("outlining.frag")}))
+  // clang-format on
+  CHECK(renderer_.load_model("board", MODEL("board.gltf")))
+  CHECK(renderer_.load_model("king", MODEL("king.gltf")))
+  CHECK(renderer_.load_model("queen", MODEL("queen.gltf")))
+  CHECK(renderer_.load_model("bishop", MODEL("bishop.gltf")))
+  CHECK(renderer_.load_model("knight", MODEL("knight.gltf")))
+  CHECK(renderer_.load_model("rook", MODEL("rook.gltf")))
+  CHECK(renderer_.load_model("pawn", MODEL("pawn.gltf")))
+  CHECK(renderer_.load_model("tile", MODEL("tile.gltf")))
 #undef CHECK
-
-  glEnable(GL_DEPTH_TEST);
-  glDepthFunc(GL_LESS);
-
-  glEnable(GL_STENCIL_TEST);
-  glStencilFunc(GL_ALWAYS, 0, 0xFF);
-  glStencilOp(GL_KEEP, GL_REPLACE, GL_REPLACE);
-
-  glEnable(GL_CULL_FACE);
-  glCullFace(GL_BACK);
 
   last_frame_ = static_cast<float>(glfwGetTime());
   while (glfwWindowShouldClose(renderer_.get_window()) != 1) {
@@ -78,17 +53,11 @@ void Game::run() {
     process_input();
     update();
 
-    renderer_.begin_drawing(camera_);
+    draw_picking_texture();
+    renderer_.begin_drawing(k_light_position);
     draw();
     renderer_.end_drawing();
   }
-}
-
-void Game::resize_picking_texture(const glm::vec2& size) {
-  Renderer::destroy_framebuffer(picking_texture_);
-  picking_texture_ = renderer_.create_framebuffer(size);
-  update_picking_texture_ = true;
-  LOGF("GAME", "Resized picking texture to {} {}", size.x, size.y);
 }
 
 void Game::update() {
@@ -142,7 +111,6 @@ void Game::update() {
     if (!is_controlling_camera() && board_.get_turn() != ai_color_) {
       enable_cursor();
     }
-    update_picking_texture_ = true;
     return;
   }
 
@@ -165,9 +133,7 @@ void Game::update() {
 }
 
 void Game::draw() {
-  update_picking_texture();
-
-  draw_board();
+  renderer_.draw_model("board", {.rotation = -90.0F, .scale = k_game_scale});
   draw_pieces();
   draw_selectable_tiles();
 }
@@ -179,37 +145,26 @@ void Game::process_input() {
   }
 }
 
-void Game::update_picking_texture() {
-  if (update_picking_texture_) {
-    renderer_.bind_shader(picking_);
-    renderer_.bind_framebuffer(picking_texture_, GL_DRAW_FRAMEBUFFER);
-    Renderer::clear_framebuffer();
+void Game::draw_picking_texture() {
+  renderer_.begin_picking(Renderer::PickingMode::Write);
 
-    for (int tile = 0; tile < 64; tile++) {
-      const Piece piece{board_.get_tile(tile)};
-      if (get_piece_type(piece) == PieceType::None) {
-        continue;
-      }
-
-      Model* model = get_model(piece);
-      renderer_.set_shader_uniform(picking_, "color", tile);
-      renderer_.draw_model(calculate_piece_transform(tile), model, nullptr);
+  for (int tile = 0; tile < 64; tile++) {
+    if (board_.is_empty(tile)) {
+      continue;
     }
 
-    Model* model = get_model(ModelType::SelectableTile);
-    for (int i = 0; i < selectable_tiles_.size; i++) {
-      const int target{selectable_tiles_.data[i].target};
-      renderer_.set_shader_uniform(picking_, "color", target);
-      renderer_.draw_model(calculate_tile_transform(target), model, nullptr);
-    }
-
-    renderer_.unbind_framebuffer(GL_DRAW_FRAMEBUFFER);
-
-    glFlush();
-    glFinish();
-
-    update_picking_texture_ = false;
+    const std::string_view model_name{get_model_name(board_.get_tile(tile))};
+    renderer_.set_shader_uniform("color", tile);
+    renderer_.draw_model(model_name, calculate_piece_transform(tile));
   }
+
+  for (int i = 0; i < selectable_tiles_.size; i++) {
+    const int target{selectable_tiles_.data[i].target};
+    renderer_.set_shader_uniform("color", target);
+    renderer_.draw_model("tile", calculate_tile_transform(target));
+  }
+
+  renderer_.end_picking(Renderer::PickingMode::Write);
 
   GLFWwindow* window = renderer_.get_window();
   if (!is_cursor_active()) {
@@ -217,29 +172,16 @@ void Game::update_picking_texture() {
     return;
   }
 
-  renderer_.bind_framebuffer(picking_texture_, GL_READ_FRAMEBUFFER);
+  renderer_.begin_picking(Renderer::PickingMode::Read);
 
   int height{};
   glfwGetWindowSize(window, nullptr, &height);
 
   glm::ivec2 coord{mouse_last_position_};
   coord.y = height - coord.y;
-  pixel_ = Renderer::read_pixel(coord);
+  pixel_ = renderer_.read_pixel(coord);
 
-  renderer_.unbind_framebuffer(GL_READ_FRAMEBUFFER);
-}
-
-void Game::draw_board() {
-  Transform transform{};
-  transform.scale = k_game_scale;
-  transform.rotation = -90.0F;
-
-  Model* model = get_model(ModelType::Board);
-
-  renderer_.bind_shader(lighting_);
-  renderer_.set_shader_uniform(lighting_, "light_pos", k_light_position);
-  renderer_.set_shader_uniform(lighting_, "view_pos", camera_.get_position());
-  renderer_.draw_model(transform, model, model->mesh.default_);
+  renderer_.end_picking(Renderer::PickingMode::Read);
 }
 
 void Game::draw_pieces() {
@@ -254,15 +196,13 @@ void Game::draw_pieces() {
     }
 
     Transform transform{calculate_piece_transform(tile)};
-    Model* model = get_model(board_.get_tile(tile));
-    Material* material = board_.get_color(tile) == PieceColor::White
-                             ? model->mesh.white
-                             : model->mesh.black;
+    const std::string_view model_name{get_model_name(board_.get_tile(tile))};
+    const bool is_black{board_.get_color(tile) == PieceColor::Black};
 
     if (!active_move_.is_completed) {
       if (active_move_.tile == tile) {
         transform.position = active_move_.position;
-        renderer_.draw_model(transform, model, material);
+        renderer_.draw_model(model_name, transform, is_black);
         continue;
       }
 
@@ -280,37 +220,31 @@ void Game::draw_pieces() {
     const bool outline{outline_hover || outline_selected ||
                        outline_attackable || outline_king};
     if (outline) {
-      // renderer_.clear_stencil();
-      renderer_.begin_stencil_writing();
+      renderer_.begin_outlining();
     }
 
-    renderer_.draw_model(transform, model, material);
+    renderer_.draw_model(model_name, transform, is_black);
 
     if (outline) {
-      renderer_.end_stencil_writing();
-
-      renderer_.bind_shader(outlining_);
+      renderer_.end_outlining();
+      renderer_.install_shader("outlining");
       glm::vec4 outline_color{k_picking_outline_color};
       if (!outline_hover && !outline_selected && !outline_attackable &&
           outline_king) {
         outline_color = k_check_outline_color;
       }
-      renderer_.draw_model_outline(transform, model, 0.0125F, outline_color);
-      renderer_.bind_shader(lighting_);
-      renderer_.set_shader_uniform(lighting_, "light_pos", k_light_position);
-      renderer_.set_shader_uniform(lighting_, "view_pos",
-                                   camera_.get_position());
+      renderer_.draw_model_outline(model_name, transform, 0.0125F,
+                                   outline_color);
+      renderer_.install_shader("lighting");
     }
   }
 }
 
 void Game::draw_selectable_tiles() {
-  renderer_.bind_shader(shader_);
+  renderer_.install_shader("basic");
 
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-  Model* model = get_model(ModelType::SelectableTile);
 
   int hover{-1};
   if (is_valid_tile(pixel_)) {
@@ -318,12 +252,9 @@ void Game::draw_selectable_tiles() {
   }
 
   for (int i = 0; i < selectable_tiles_.size; i++) {
-    Material* material{&selectable_tile_};
     const int target{selectable_tiles_.data[i].target};
-    if (target == hover) {
-      material = &selectable_tile_hover_;
-    }
-    renderer_.draw_model(calculate_tile_transform(target), model, material);
+    renderer_.draw_model("tile", calculate_tile_transform(target),
+                         target == hover);
   }
 
   glDisable(GL_BLEND);
@@ -349,27 +280,23 @@ void Game::disable_cursor() {
   mouse_last_position_real_ = mouse_last_position_;
 }
 
-Model* Game::get_model(Piece piece) const {
+std::string_view Game::get_model_name(Piece piece) {
   const PieceType type{get_piece_type(piece)};
 
-#define PIECE_TO_MODEL(piece, model) \
-  if (type == (piece)) {             \
-    return get_model(model);         \
+#define PIECE_TO_MODEL(piece, model_name) \
+  if (type == (piece)) {                  \
+    return model_name;                    \
   }
 
-  PIECE_TO_MODEL(PieceType::King, ModelType::King);
-  PIECE_TO_MODEL(PieceType::Queen, ModelType::Queen);
-  PIECE_TO_MODEL(PieceType::Bishop, ModelType::Bishop);
-  PIECE_TO_MODEL(PieceType::Knight, ModelType::Knight);
-  PIECE_TO_MODEL(PieceType::Rook, ModelType::Rook);
-  PIECE_TO_MODEL(PieceType::Pawn, ModelType::Pawn);
+  PIECE_TO_MODEL(PieceType::King, "king");
+  PIECE_TO_MODEL(PieceType::Queen, "queen");
+  PIECE_TO_MODEL(PieceType::Bishop, "bishop");
+  PIECE_TO_MODEL(PieceType::Knight, "knight");
+  PIECE_TO_MODEL(PieceType::Rook, "rook");
+  PIECE_TO_MODEL(PieceType::Pawn, "pawn");
 #undef PIECE_TO_MODEL
 
-  return nullptr;
-}
-
-Model* Game::get_model(ModelType type) const {
-  return models_[to_underlying(type)];
+  return {};
 }
 
 bool Game::is_selectable_tile(int tile) const {
@@ -463,8 +390,6 @@ void Game::mouse_move_callback(GLFWwindow* window, double xpos, double ypos) {
     if (game->is_cursor_active()) {
       game->disable_cursor();
     }
-
-    game->update_picking_texture_ = true;
   }
 }
 
@@ -472,7 +397,6 @@ void Game::mouse_scroll_callback(GLFWwindow* window, double /*xoffset*/,
                                  double yoffset) {
   auto* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
   game->camera_.process_mouse_scroll(static_cast<float>(yoffset));
-  game->update_picking_texture_ = true;
 }
 
 void Game::key_callback(GLFWwindow* window, int key, int /*scancode*/,

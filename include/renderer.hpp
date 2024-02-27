@@ -4,6 +4,7 @@
 
 #include <deque>
 #include <glm/gtc/type_ptr.hpp>
+#include <variant>
 
 #include "camera.hpp"
 
@@ -21,44 +22,26 @@ struct Vertex {
   glm::vec2 tex_coord{};
 };
 
-struct Shader {
-  fs::path vert_path;
-  fs::path frag_path;
-  GLuint id{};
-};
-
-struct Texture {
-  fs::path path;
-  GLuint id{};
-};
-
 struct Material {
-  std::string name;
-  Texture* base_color{};
-  Texture* rough{};
-  Texture* normal{};
+  GLuint albedo{};
+  GLuint roughness{};
+  GLuint normal{};
 };
 
-struct Mesh {
+struct Model {
   GLuint vao{};
   GLuint vbo{};
   GLuint ebo{};
   GLsizei index_count{};
-  Material* default_;
-  Material* white;
-  Material* black;
+  const Material* material0{};
+  const Material* material1{};
 };
 
-struct Model {
-  fs::path path;
-  Mesh mesh;
-};
-
-enum class Framebuffer : GLuint;
+struct cgltf_material;
 
 class Renderer {
  public:
-  explicit Renderer(GLFWwindow* window);
+  explicit Renderer(GLFWwindow* window, const Camera& camera);
 
   ~Renderer();
 
@@ -68,68 +51,63 @@ class Renderer {
   Renderer(Renderer&&) = delete;
   Renderer& operator=(Renderer&&) = delete;
 
-  Shader* create_shader(const fs::path& vert_path, const fs::path& frag_path);
-  static void destroy_shader(Shader* shader);
-  void bind_shader(Shader* shader);
+  struct ShaderPath {
+    std::filesystem::path vert;
+    std::filesystem::path frag;
+  };
 
-#define SET_SHADER_UNIFORM_IMPL(type, uniform, ...)                       \
-  static void set_shader_uniform(Shader* shader, std::string_view name,   \
-                                 type value) {                            \
-    const GLint location = glGetUniformLocation(shader->id, name.data()); \
-    uniform(location, __VA_ARGS__);                                       \
-  }
+  bool load_shader(std::string name, const ShaderPath& path);
+  void install_shader(std::string_view name);
+  // clang-format off
+  using UniformValue = std::variant<float, glm::vec2, glm::vec3, glm::vec4, int, glm::mat3, glm::mat4>;
+  void set_shader_uniform(std::string_view name, UniformValue value) const;
+  // clang-format on
 
-  SET_SHADER_UNIFORM_IMPL(int, glUniform1i, value);
-  SET_SHADER_UNIFORM_IMPL(float, glUniform1f, value);
-  SET_SHADER_UNIFORM_IMPL(const glm::vec3&, glUniform3fv, 1,
-                          glm::value_ptr(value));
-  SET_SHADER_UNIFORM_IMPL(const glm::vec4&, glUniform4fv, 1,
-                          glm::value_ptr(value));
-  SET_SHADER_UNIFORM_IMPL(const glm::mat4&, glUniformMatrix4fv, 1, GL_FALSE,
-                          glm::value_ptr(value));
-#undef SET_SHADER_UNIFORM_IMPL
+  bool load_model(std::string name, const std::filesystem::path& path);
+  void draw_model(std::string_view name, const Transform& transform,
+                  bool use_alternative_material = false);
 
-  Texture* create_texture(const fs::path& path);
-  static void destroy_texture(Texture* texture);
+  enum class PickingMode { Read, Write };
 
-  Model* create_model(const fs::path& path);
-  static void destroy_model(Model* model);
-  void draw_model(const Transform& transform, Model* model, Material* material);
-  void draw_model_outline(const Transform& transform, Model* model,
-                          float thickness, const glm::vec4& color);
-
-  Framebuffer* create_framebuffer(const glm::ivec2& size);
-  static void destroy_framebuffer(Framebuffer* framebuffer);
-  void bind_framebuffer(Framebuffer* framebuffer, GLenum target);
-  void unbind_framebuffer(GLenum target);
-  static void clear_framebuffer();
-
+  void begin_picking(PickingMode picking_mode);
+  static void end_picking(PickingMode picking_mode);
   static int read_pixel(const glm::ivec2& coord);
 
-  void begin_drawing(Camera& camera);
+  static void begin_outlining();
+  static void end_outlining();
+  void draw_model_outline(std::string_view name, const Transform& transform,
+                          float thickness, const glm::vec4& color);
+
+  void begin_drawing(const glm::vec3& light_pos);
   void end_drawing();
-
-  static void begin_stencil_writing();
-  static void end_stencil_writing();
-  static void clear_stencil();
-
-  static void begin_wire_mode();
-  static void end_wire_mode();
 
   [[nodiscard]] GLFWwindow* get_window() const { return window_; }
 
  private:
+  void unload_shader(std::string_view name);
+
+  GLuint load_texture(const std::filesystem::path& path);
+  void unload_texture(const std::filesystem::path& path);
+
+  const Material* load_material(const std::filesystem::path& parent,
+                                const cgltf_material* cgltf_material);
+
+  void unload_model(std::string_view name);
+
   GLFWwindow* window_{};
 
-  Camera* camera_{};
+  GLuint current_shader_{};
+  StringMap<GLuint> shader_map_;
 
-  Shader* bound_shader_{};
-  Material* bound_material_{};
-  Framebuffer* bound_framebuffer_{};
+  GLuint current_texture0_{};
+  GLuint current_texture1_{};
+  GLuint current_texture2_{};
+  std::unordered_map<std::filesystem::path, GLuint> texture_map_;
 
-  std::deque<Shader> shaders_;
-  std::deque<Texture> textures_;
-  std::deque<Material> materials_;
-  std::deque<Model> models_;
-  std::deque<Framebuffer> framebuffers_;
+  StringMap<Material> material_map_;
+  StringMap<Model> model_map_;
+
+  GLuint picking_fbo_{};
+
+  const Camera* camera_;
 };

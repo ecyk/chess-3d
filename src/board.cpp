@@ -3,7 +3,7 @@
 Board::Board() { load_fen(); }
 
 void Board::move(Move move) {
-  ASSERT(get_color(move.tile) != PieceColor::None &&
+  assert(get_color(move.tile) != PieceColor::None &&
          get_type(move.tile) != PieceType::None);
 
   const MoveRecord& record{
@@ -317,7 +317,7 @@ void Board::generate_moves(Moves& moves, int tile) const {
   }
 
   auto add_move = [this](Moves& moves, int tile, int target) {
-    ASSERT(get_color(tile) != PieceColor::None);
+    assert(get_color(tile) != PieceColor::None);
     if (get_color(tile) != get_color(target)) {
       moves.data[moves.size++] = {tile, target};
     }
@@ -397,7 +397,7 @@ void Board::generate_moves(Moves& moves, int tile) const {
   }
 
       auto add_pawn_move = [this](Moves& moves, int tile, int target) {
-        ASSERT(get_color(tile) != PieceColor::None);
+        assert(get_color(tile) != PieceColor::None);
         if (get_color(tile) != get_color(target)) {
           if (target >= 8 && target < 56) {
             moves.data[moves.size++] = {tile, target};

@@ -11,9 +11,29 @@
 
 #include "log.hpp"
 
-#define ASSERT(expression) assert(expression)
+struct StringHash {
+  using is_transparent = void;
 
-namespace fs = std::filesystem;
+  [[nodiscard]] size_t operator()(const char* str) const {
+    return std::hash<std::string_view>{}(str);
+  }
+  [[nodiscard]] size_t operator()(std::string_view str) const {
+    return std::hash<std::string_view>{}(str);
+  }
+  [[nodiscard]] size_t operator()(const std::string& str) const {
+    return std::hash<std::string>{}(str);
+  }
+};
+
+// clang-format off
+template <typename T>
+using StringMap = std::unordered_map<std::string, T, StringHash, std::equal_to<>>;
+
+template <class... Ts>
+struct overload : Ts... { using Ts::operator()...; };
+template <class... Ts>
+overload(Ts...) -> overload<Ts...>;
+// clang-format on
 
 template <typename E>
 constexpr auto to_underlying(E e) -> typename std::underlying_type<E>::type {
