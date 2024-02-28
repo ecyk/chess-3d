@@ -47,8 +47,6 @@ void Game::run() {
     delta_time_ = current_frame - last_frame_;
     last_frame_ = current_frame;
 
-    time_passed_ += delta_time_;
-
     glfwPollEvents();
 
     process_input();
@@ -436,6 +434,24 @@ void Game::mouse_scroll_callback(GLFWwindow* window, double /*xoffset*/,
 void Game::key_callback(GLFWwindow* window, int key, int /*scancode*/,
                         int action, int /*mods*/) {
   auto* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
+  if (key == GLFW_KEY_F && action == GLFW_PRESS) {
+    if (game->is_fullscreen) {
+      glfwSetWindowMonitor(window, nullptr, game->window_old_pos_.x,
+                           game->window_old_pos_.y, game->window_old_size_.x,
+                           game->window_old_size_.y, 0);
+      game->is_fullscreen = false;
+    } else {
+      glfwGetWindowPos(window, &game->window_old_pos_.x,
+                       &game->window_old_pos_.y);
+      glfwGetWindowSize(window, &game->window_old_size_.x,
+                        &game->window_old_size_.y);
+      GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+      const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+      glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, 0);
+      game->is_fullscreen = true;
+    }
+    return;
+  }
   if (!game->active_move_.is_completed ||
       game->board_.get_turn() == game->ai_color_) {
     return;

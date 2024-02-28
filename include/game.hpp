@@ -40,8 +40,6 @@ class Game {
   float delta_time_{};
   float last_frame_{};
 
-  float time_passed_{};
-
   [[nodiscard]] bool is_controlling_camera() const;
 
   Camera camera_{k_camera_position, k_camera_target};
@@ -93,6 +91,10 @@ class Game {
   [[noreturn]] void ai_think_thread();
 
   bool game_over_{};
+
+  bool is_fullscreen{};
+  glm::ivec2 window_old_pos_{};
+  glm::ivec2 window_old_size_{};
 
   Transform calculate_piece_transform(int tile);
 
