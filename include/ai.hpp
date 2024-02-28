@@ -8,6 +8,8 @@ class AI {
 
   Move think();
 
+  Move get_best_move() const { return best_move_; }
+
  private:
   int search(int depth);
   int evaluate();

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <thread>
+
 #include "ai.hpp"
 #include "board.hpp"
 #include "renderer.hpp"
@@ -81,8 +83,14 @@ class Game {
   void set_active_move(const Move& move, bool is_undo = false);
   void undo();
 
-  AI ai_{board_};
+  Board ai_board_;
+  AI ai_{ai_board_};
   PieceColor ai_color_{};
+  bool ai_start_thinking_{};
+  bool ai_found_move_{};
+  std::thread ai_thread_;
+
+  [[noreturn]] void ai_think_thread();
 
   bool game_over_{};
 

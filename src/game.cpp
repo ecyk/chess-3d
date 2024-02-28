@@ -2,12 +2,11 @@
 
 #include <GLFW/glfw3.h>
 
-#include <random>
-
 #define SHADER(filename) "resources/shaders/" filename
 #define MODEL(filename) "resources/models/" filename
 
-Game::Game(GLFWwindow* window) : renderer_{window, camera_} {
+Game::Game(GLFWwindow* window)
+    : renderer_{window, camera_}, ai_thread_{&Game::ai_think_thread, this} {
   glfwSetWindowUserPointer(window, this);
 
   glfwSetMouseButtonCallback(window, mouse_button_callback);
@@ -40,6 +39,8 @@ void Game::run() {
   CHECK(renderer_.load_model("tile", MODEL("tile.gltf")))
 #undef CHECK
 
+  ai_thread_.detach();
+
   last_frame_ = static_cast<float>(glfwGetTime());
   while (glfwWindowShouldClose(renderer_.get_window()) != 1) {
     const auto current_frame = static_cast<float>(glfwGetTime());
@@ -65,6 +66,16 @@ void Game::update() {
     return;
   }
 
+  if (ai_found_move_) {
+    set_active_move(ai_.get_best_move());
+    ai_start_thinking_ = false;
+    ai_found_move_ = false;
+  }
+
+  if (ai_start_thinking_) {
+    return;
+  }
+
   if (active_move_.is_completed) {
     const bool checkmate{board_.is_in_checkmate()};
     const bool draw{board_.is_in_draw()};
@@ -86,7 +97,9 @@ void Game::update() {
         undo();
         return;
       }
-      set_active_move(ai_.think());
+
+      ai_board_ = board_;
+      ai_start_thinking_ = true;
     }
     return;
   }
@@ -253,6 +266,9 @@ void Game::draw_selectable_tiles() {
 
   for (int i = 0; i < selectable_tiles_.size; i++) {
     const int target{selectable_tiles_.data[i].target};
+    if (!board_.is_empty(target)) {
+      return;
+    }
     renderer_.draw_model("tile", calculate_tile_transform(target),
                          target == hover);
   }
@@ -325,6 +341,16 @@ void Game::undo() {
   }
 }
 
+void Game::ai_think_thread() {
+  while (true) {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    if (ai_start_thinking_ && !ai_found_move_) {
+      ai_.think();
+      ai_found_move_ = true;
+    }
+  }
+}
+
 Transform Game::calculate_piece_transform(int tile) {
   const Piece piece{board_.get_tile(tile)};
   return calculate_tile_transform(
@@ -353,6 +379,14 @@ void Game::mouse_button_callback(GLFWwindow* window, int button, int action,
       } else if (get_piece_type(piece) != PieceType::None) {
         if (game->board_.get_records().empty()) {
           game->ai_color_ = get_opposite_color(game->board_.get_color(tile));
+          glm::vec3 position{k_camera_position};
+          if (game->ai_color_ == PieceColor::White) {
+            position.z = 40.0F;
+            game->disable_cursor();
+          } else {
+            position.z = -40.0F;
+          }
+          game->camera_.set_position(position);
         }
         game->clear_selections();
         game->board_.generate_legal_moves(game->selectable_tiles_, tile);
@@ -402,7 +436,8 @@ void Game::mouse_scroll_callback(GLFWwindow* window, double /*xoffset*/,
 void Game::key_callback(GLFWwindow* window, int key, int /*scancode*/,
                         int action, int /*mods*/) {
   auto* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
-  if (!game->active_move_.is_completed) {
+  if (!game->active_move_.is_completed ||
+      game->board_.get_turn() == game->ai_color_) {
     return;
   }
   if (key == GLFW_KEY_U && action == GLFW_PRESS) {

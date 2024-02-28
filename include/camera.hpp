@@ -16,6 +16,7 @@ class Camera {
   void process_mouse_scroll(float offset_y);
 
   [[nodiscard]] const glm::vec3& get_position() const { return position_; }
+  void set_position(const glm::vec3& position) { position_ = position; }
 
  private:
   [[nodiscard]] glm::vec3 calculate_forward() const {

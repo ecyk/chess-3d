@@ -18,6 +18,8 @@ Renderer::Renderer(GLFWwindow* window, const Camera& camera)
   glEnable(GL_CULL_FACE);
   glCullFace(GL_BACK);
 
+  glEnable(GL_MULTISAMPLE);
+
   glGenFramebuffers(1, &picking_fbo_);
   glBindFramebuffer(GL_FRAMEBUFFER, picking_fbo_);
 

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(chess LANGUAGES CXX)
+project(chess-3d LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -32,6 +32,7 @@ set(MSVC_WARNINGS
         /w14906 # string literal cast to 'LPWSTR'
         /w14928 # illegal copy-initialization; more than one user-defined conversion has been implicitly applied
         /permissive- # standards conformance mode for MSVC compiler.
+
         # /WX
         )
 
@@ -50,6 +51,7 @@ set(CLANG_WARNINGS
         -Wdouble-promotion # warn if float is implicit promoted to double
         -Wformat=2 # warn on security issues around functions that format output (ie printf)
         -Wimplicit-fallthrough # warn on statements that fallthrough without an explicit annotation
+
         # -Werror
         )
 
@@ -74,19 +76,18 @@ else ()
     message(AUTHOR_WARNING "No compiler warnings set for CXX compiler: '${CMAKE_CXX_COMPILER_ID}'")
 endif ()
 
-
 file(GLOB SOURCES ${CMAKE_SOURCE_DIR}/src/*)
-add_executable(chess ${SOURCES})
-target_link_libraries(chess glm::glm glfw)
-target_include_directories(chess PUBLIC ${CMAKE_SOURCE_DIR}/external/include ${CMAKE_SOURCE_DIR}/include)
-target_compile_options(chess PUBLIC $<$<COMPILE_LANGUAGE:CXX>:${PROJECT_WARNINGS_CXX}>)
+add_executable(chess-3d ${SOURCES})
+target_link_libraries(chess-3d glm::glm glfw)
+target_include_directories(chess-3d PUBLIC ${CMAKE_SOURCE_DIR}/external/include ${CMAKE_SOURCE_DIR}/include)
+target_compile_options(chess-3d PUBLIC $<$<COMPILE_LANGUAGE:CXX>:${PROJECT_WARNINGS_CXX}>)
 
-set_target_properties(chess PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
-set_target_properties(chess PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/bin)
-set_target_properties(chess PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/bin)
-set_target_properties(chess PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+set_target_properties(chess-3d PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+set_target_properties(chess-3d PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/bin)
+set_target_properties(chess-3d PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/bin)
+set_target_properties(chess-3d PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
-add_custom_command(TARGET chess POST_BUILD
+add_custom_command(TARGET chess-3d POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E create_symlink
         ${CMAKE_SOURCE_DIR}/resources ${CMAKE_SOURCE_DIR}/bin/resources
         )
