@@ -2,89 +2,13 @@
 
 Board::Board() { load_fen(); }
 
-void Board::move(Move move) {
-  assert(get_color(move.tile) != PieceColor::None &&
-         get_type(move.tile) != PieceType::None);
-
-  const MoveRecord& record{
-      records_.emplace_back(move, move.promotion, get_tile(move.target),
-                            castling_rights_, enpassant_tile_)};
-  set_tile(move.target, get_tile(move.tile));
-  set_tile(move.tile, {});
-
-  turn_ = get_opposite_color(turn_);
-  enpassant_tile_ = -1;
-
-  auto clear_castling_rights = [this](int tile, PieceColor color) {
-    auto clear_castling_right = [this](int color_index, CastlingRight right) {
-      castling_rights_[color_index] = static_cast<CastlingRight>(
-          to_underlying(castling_rights_[color_index]) & ~to_underlying(right));
-    };
-
-    switch (tile) {
-      case 0:
-        if (color == PieceColor::White) {
-          clear_castling_right(1, CastlingRight::Long);
-        }
-        break;
-      case 7:
-        if (color == PieceColor::White) {
-          clear_castling_right(1, CastlingRight::Short);
-        }
-        break;
-      case 56:
-        if (color == PieceColor::Black) {
-          clear_castling_right(0, CastlingRight::Long);
-        }
-        break;
-      case 63:
-        if (color == PieceColor::Black) {
-          clear_castling_right(0, CastlingRight::Short);
-        }
-        break;
-      default:
-        break;
-    }
-  };
-
-  const uint8_t color_index{get_color_index(get_color(move.target))};
-  if (castling_rights_[color_index] != CastlingRight::None &&
-      get_piece_type(record.captured_piece) == PieceType::Rook) {
-    clear_castling_rights(move.target, get_piece_color(record.captured_piece));
-  }
-
-  switch (get_type(move.target)) {
-    case PieceType::King:
-      if (glm::abs(move.target - move.tile) == 2) {
-        const int rook_tile{move.tile + (move.tile < move.target ? 3 : -4)};
-        set_tile((move.tile + move.target) / 2, get_tile(rook_tile));
-        set_tile(rook_tile, {});
-      }
-      castling_rights_[color_index] = CastlingRight::None;
-      king_tiles_[color_index] = move.target;
-      break;
-    case PieceType::Rook:
-      if (castling_rights_[color_index] != CastlingRight::None) {
-        clear_castling_rights(move.tile, get_color(move.target));
-      }
-      break;
-    case PieceType::Pawn:
-      if (glm::abs(move.target - move.tile) == 16) {
-        enpassant_tile_ = (move.tile + move.target) / 2;
-      } else if (move.target == record.enpassant_tile) {
-        const int captured_tile{
-            move.target +
-            (get_color(move.target) == PieceColor::White ? -8 : 8)};
-        records_.back().captured_piece = get_tile(captured_tile);
-        set_tile(captured_tile, {});
-      } else if (move.promotion != PieceType::None) {
-        set_tile(move.target,
-                 make_piece(get_color(move.target), move.promotion));
-      };
-      break;
-    default:
-      break;
-  }
+void Board::make_move(Move move) {
+  this->move(move);
+  const bool has_legal_moves{this->has_legal_moves()};
+  is_in_check_ = is_threatened(king_tiles_[get_color_index(turn_)],
+                               get_opposite_color(turn_));
+  is_in_checkmate_ = is_in_check_ && !has_legal_moves;
+  is_in_draw_ = !is_in_check_ && !has_legal_moves;
 }
 
 void Board::undo() {
@@ -130,29 +54,35 @@ void Board::undo() {
   turn_ = get_opposite_color(turn_);
   castling_rights_ = record.castling_rights;
   enpassant_tile_ = record.enpassant_tile;
+  is_in_check_ = record.is_in_check_;
+  is_in_checkmate_ = record.is_in_checkmate_;
+  is_in_draw_ = record.is_in_draw_;
 
   records_.pop_back();
 }
 
-void Board::generate_all_legal_moves(Moves& moves) {
+void Board::generate_all_legal_moves(Moves& moves, bool only_captures) {
   for (int tile = 0; tile < 64; tile++) {
-    generate_legal_moves(moves, tile);
+    generate_legal_moves(moves, tile, only_captures);
   }
 }
 
-void Board::generate_legal_moves(Moves& moves, int tile) {
+void Board::generate_legal_moves(Moves& moves, int tile, bool only_captures) {
   if (turn_ != get_color(tile)) {
     return;
   }
+  auto check_king = [this]() {
+    return is_threatened(
+        king_tiles_[get_color_index(get_opposite_color(turn_))], turn_);
+  };
   int end{moves.size};
   generate_moves(moves, tile);
   for (int i = end; i < moves.size; i++) {
+    const bool captured{!is_empty(moves.data[i].target)};
     move(moves.data[i]);
-    turn_ = get_opposite_color(turn_);
-    if (!is_in_check()) {
+    if (!check_king() && (!only_captures || (only_captures && captured))) {
       moves.data[end++] = moves.data[i];
     }
-    turn_ = get_opposite_color(turn_);
     undo();
   }
   moves.size = end;
@@ -181,6 +111,9 @@ void Board::load_fen(std::string_view fen) {
   king_tiles_ = {};
   enpassant_tile_ = -1;
   tiles_ = {};
+  is_in_check_ = false;
+  is_in_checkmate_ = false;
+  is_in_draw_ = false;
   records_ = {};
 
   std::array<std::string_view, 6> parts{};
@@ -285,6 +218,91 @@ void Board::load_fen(std::string_view fen) {
     enpassant_tile_ = 8 * (parts[3][1] - '0' - 1) + (parts[3][0] - 'a');
   }
 };
+
+void Board::move(Move move) {
+  assert(get_color(move.tile) != PieceColor::None &&
+         get_type(move.tile) != PieceType::None);
+
+  const MoveRecord& record{records_.emplace_back(
+      move, move.promotion, get_tile(move.target), castling_rights_,
+      enpassant_tile_, is_in_check_, is_in_checkmate_, is_in_draw_)};
+  set_tile(move.target, get_tile(move.tile));
+  set_tile(move.tile, {});
+
+  turn_ = get_opposite_color(turn_);
+  enpassant_tile_ = -1;
+
+  auto clear_castling_rights = [this](int tile, PieceColor color) {
+    auto clear_castling_right = [this](int color_index, CastlingRight right) {
+      castling_rights_[color_index] = static_cast<CastlingRight>(
+          to_underlying(castling_rights_[color_index]) & ~to_underlying(right));
+    };
+
+    switch (tile) {
+      case 0:
+        if (color == PieceColor::White) {
+          clear_castling_right(1, CastlingRight::Long);
+        }
+        break;
+      case 7:
+        if (color == PieceColor::White) {
+          clear_castling_right(1, CastlingRight::Short);
+        }
+        break;
+      case 56:
+        if (color == PieceColor::Black) {
+          clear_castling_right(0, CastlingRight::Long);
+        }
+        break;
+      case 63:
+        if (color == PieceColor::Black) {
+          clear_castling_right(0, CastlingRight::Short);
+        }
+        break;
+      default:
+        break;
+    }
+  };
+
+  const uint8_t color_index{get_color_index(get_color(move.target))};
+  if (castling_rights_[color_index] != CastlingRight::None &&
+      get_piece_type(record.captured_piece) == PieceType::Rook) {
+    clear_castling_rights(move.target, get_piece_color(record.captured_piece));
+  }
+
+  switch (get_type(move.target)) {
+    case PieceType::King:
+      if (glm::abs(move.target - move.tile) == 2) {
+        const int rook_tile{move.tile + (move.tile < move.target ? 3 : -4)};
+        set_tile((move.tile + move.target) / 2, get_tile(rook_tile));
+        set_tile(rook_tile, {});
+      }
+      castling_rights_[color_index] = CastlingRight::None;
+      king_tiles_[color_index] = move.target;
+      break;
+    case PieceType::Rook:
+      if (castling_rights_[color_index] != CastlingRight::None) {
+        clear_castling_rights(move.tile, get_color(move.target));
+      }
+      break;
+    case PieceType::Pawn:
+      if (glm::abs(move.target - move.tile) == 16) {
+        enpassant_tile_ = (move.tile + move.target) / 2;
+      } else if (move.target == record.enpassant_tile) {
+        const int captured_tile{
+            move.target +
+            (get_color(move.target) == PieceColor::White ? -8 : 8)};
+        records_.back().captured_piece = get_tile(captured_tile);
+        set_tile(captured_tile, {});
+      } else if (move.promotion != PieceType::None) {
+        set_tile(move.target,
+                 make_piece(get_color(move.target), move.promotion));
+      };
+      break;
+    default:
+      break;
+  }
+}
 
 bool Board::has_legal_moves() {
   Moves moves;

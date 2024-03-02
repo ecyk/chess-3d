@@ -62,8 +62,8 @@ vec3 fresnel_schlick(float cos_theta, vec3 F0) {
 void main() {
     vec3 albedo = pow(texture(albedo_tex, tex_coord).rgb, vec3(2.2));
     float metallic = 0;
-    float roughness = texture(roughness_tex, tex_coord).g;
-    float ao = 4;
+    float roughness = texture(roughness_tex, tex_coord).g + 0.175;
+    float ao = 8;
 
     vec3 N = calculate_normal();
     vec3 V = normalize(view_pos - world_pos);
@@ -75,7 +75,7 @@ void main() {
     vec3 H = normalize(V + L);
     float distance = length(light_pos - world_pos);
     float attenuation = 1.0 / (distance * distance);
-    vec3 light_color = vec3(3000.0);
+    vec3 light_color = vec3(2500.0);
     vec3 radiance = light_color * attenuation;
 
     float NDF = distribution_ggx(N, H, roughness);

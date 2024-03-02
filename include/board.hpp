@@ -38,6 +38,9 @@ class Board {
     Piece captured_piece{};
     CastlingRights castling_rights{};
     int enpassant_tile{};
+    bool is_in_check_{};
+    bool is_in_checkmate_{};
+    bool is_in_draw_{};
   };
 
   using Records = std::vector<MoveRecord>;
@@ -48,46 +51,35 @@ class Board {
  public:
   Board();
 
-  void move(Move move);
+  void make_move(Move move);
   void undo();
 
-  void generate_all_legal_moves(Moves& moves);
-  void generate_legal_moves(Moves& moves, int tile);
+  void generate_all_legal_moves(Moves& moves, bool only_captures = false);
+  void generate_legal_moves(Moves& moves, int tile, bool only_captures = false);
 
-  bool is_in_check() {
-    return is_threatened(king_tiles_[get_color_index(turn_)],
-                         get_opposite_color(turn_));
-  }
-  bool is_in_checkmate() { return is_in_check() && !has_legal_moves(); }
-  bool is_in_draw() { return !is_in_check() && !has_legal_moves(); }
+  [[nodiscard]] bool is_in_check() const { return is_in_check_; }
+  [[nodiscard]] bool is_in_checkmate() const { return is_in_checkmate_; }
+  [[nodiscard]] bool is_in_draw() const { return is_in_draw_; }
 
   uint64_t perft(int depth);
 
   void load_fen(std::string_view fen = k_initial_fen);
 
   [[nodiscard]] PieceColor get_turn() const { return turn_; }
-
   [[nodiscard]] Piece get_tile(int tile) const { return tiles_[tile]; }
-  [[nodiscard]] PieceColor get_color(int tile) const {
-    return get_piece_color(get_tile(tile));
-  }
-  [[nodiscard]] PieceType get_type(int tile) const {
-    return get_piece_type(get_tile(tile));
-  }
+  // clang-format off
+  [[nodiscard]] PieceColor get_color(int tile) const { return get_piece_color(get_tile(tile)); }
+  [[nodiscard]] PieceType get_type(int tile) const { return get_piece_type(get_tile(tile)); }
 
-  [[nodiscard]] bool is_empty(int tile) const {
-    return get_piece_type(get_tile(tile)) == PieceType::None;
-  }
-  [[nodiscard]] bool is_piece(int tile, PieceColor color,
-                              PieceType type) const {
-    return get_color(tile) == color && get_type(tile) == type;
-  }
-
+  [[nodiscard]] bool is_empty(int tile) const { return get_piece_type(get_tile(tile)) == PieceType::None; }
+  [[nodiscard]] bool is_piece(int tile, PieceColor color, PieceType type) const { return get_color(tile) == color && get_type(tile) == type; }
+  // clang-format on
   [[nodiscard]] const Records& get_records() const { return records_; }
 
  private:
   void set_tile(int tile, Piece piece) { tiles_[tile] = piece; }
 
+  void move(Move move);
   bool has_legal_moves();
 
   void generate_moves(Moves& moves, int tile) const;
@@ -98,5 +90,8 @@ class Board {
   std::array<int, 2> king_tiles_{};
   int enpassant_tile_{-1};
   std::array<Piece, 64> tiles_{};
+  bool is_in_check_{};
+  bool is_in_checkmate_{};
+  bool is_in_draw_{};
   Records records_;
 };

@@ -1,12 +1,11 @@
 #include "game.hpp"
 
-#include <GLFW/glfw3.h>
+#include <algorithm>
 
 #define SHADER(filename) "resources/shaders/" filename
 #define MODEL(filename) "resources/models/" filename
 
-Game::Game(GLFWwindow* window)
-    : renderer_{window, camera_}, ai_thread_{&Game::ai_think_thread, this} {
+Game::Game(GLFWwindow* window) : renderer_{window, camera_} {
   glfwSetWindowUserPointer(window, this);
 
   glfwSetMouseButtonCallback(window, mouse_button_callback);
@@ -39,8 +38,6 @@ void Game::run() {
   CHECK(renderer_.load_model("tile", MODEL("tile.gltf")))
 #undef CHECK
 
-  ai_thread_.detach();
-
   last_frame_ = static_cast<float>(glfwGetTime());
   while (glfwWindowShouldClose(renderer_.get_window()) != 1) {
     const auto current_frame = static_cast<float>(glfwGetTime());
@@ -60,31 +57,23 @@ void Game::run() {
 }
 
 void Game::update() {
-  if (game_over_) {
+  if (game_over_ || ai_.is_thinking()) {
     return;
   }
 
-  if (ai_found_move_) {
+  if (ai_.has_found_move()) {
     set_active_move(ai_.get_best_move());
-    ai_start_thinking_ = false;
-    ai_found_move_ = false;
-  }
-
-  if (ai_start_thinking_) {
-    return;
   }
 
   if (active_move_.is_completed) {
-    const bool checkmate{board_.is_in_checkmate()};
-    const bool draw{board_.is_in_draw()};
-    if (checkmate) {
+    if (board_.is_in_checkmate()) {
       LOGF("GAME", "{} won!",
            board_.get_turn() == PieceColor::White ? "Black" : "White");
     }
-    if (draw) {
-      LOGF("GAME", "Draw!");
+    if (board_.is_in_draw()) {
+      LOG("GAME", "Draw!");
     }
-    if (checkmate || draw) {
+    if (board_.is_in_checkmate() || board_.is_in_draw()) {
       enable_cursor();
       game_over_ = true;
       return;
@@ -96,8 +85,7 @@ void Game::update() {
         return;
       }
 
-      ai_board_ = board_;
-      ai_start_thinking_ = true;
+      ai_.think(board_);
     }
     return;
   }
@@ -115,7 +103,7 @@ void Game::update() {
           (active_move_.target < 8 || active_move_.target > 55)) {
         promotion = PieceType::Queen;
       }
-      board_.move({active_move_.tile, active_move_.target, promotion});
+      board_.make_move({active_move_.tile, active_move_.target, promotion});
     }
     active_move_.angle = 0.0F;
     active_move_.is_completed = true;
@@ -265,52 +253,13 @@ void Game::draw_selectable_tiles() {
   for (int i = 0; i < selectable_tiles_.size; i++) {
     const int target{selectable_tiles_.data[i].target};
     if (!board_.is_empty(target)) {
-      return;
+      continue;
     }
     renderer_.draw_model("tile", calculate_tile_transform(target),
                          target == hover);
   }
 
   glDisable(GL_BLEND);
-}
-
-bool Game::is_controlling_camera() const {
-  return glfwGetMouseButton(renderer_.get_window(), GLFW_MOUSE_BUTTON_MIDDLE) ==
-         GLFW_PRESS;
-}
-
-bool Game::is_cursor_active() const {
-  return glfwGetInputMode(renderer_.get_window(), GLFW_CURSOR) ==
-         GLFW_CURSOR_NORMAL;
-}
-
-void Game::enable_cursor() {
-  glfwSetInputMode(renderer_.get_window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-  mouse_last_position_ = mouse_last_position_real_;
-}
-
-void Game::disable_cursor() {
-  glfwSetInputMode(renderer_.get_window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-  mouse_last_position_real_ = mouse_last_position_;
-}
-
-std::string_view Game::get_model_name(Piece piece) {
-  const PieceType type{get_piece_type(piece)};
-
-#define PIECE_TO_MODEL(piece, model_name) \
-  if (type == (piece)) {                  \
-    return model_name;                    \
-  }
-
-  PIECE_TO_MODEL(PieceType::King, "king");
-  PIECE_TO_MODEL(PieceType::Queen, "queen");
-  PIECE_TO_MODEL(PieceType::Bishop, "bishop");
-  PIECE_TO_MODEL(PieceType::Knight, "knight");
-  PIECE_TO_MODEL(PieceType::Rook, "rook");
-  PIECE_TO_MODEL(PieceType::Pawn, "pawn");
-#undef PIECE_TO_MODEL
-
-  return {};
 }
 
 bool Game::is_selectable_tile(int tile) const {
@@ -339,16 +288,6 @@ void Game::undo() {
   }
 }
 
-void Game::ai_think_thread() {
-  while (true) {
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-    if (ai_start_thinking_ && !ai_found_move_) {
-      ai_.think();
-      ai_found_move_ = true;
-    }
-  }
-}
-
 Transform Game::calculate_piece_transform(int tile) {
   const Piece piece{board_.get_tile(tile)};
   return calculate_tile_transform(
@@ -365,6 +304,25 @@ Transform Game::calculate_tile_transform(int tile, float rotation) {
   return {calculate_tile_position(tile), rotation, k_game_scale};
 }
 
+std::string_view Game::get_model_name(Piece piece) {
+  const PieceType type{get_piece_type(piece)};
+
+#define PIECE_TO_MODEL(piece, model_name) \
+  if (type == (piece)) {                  \
+    return model_name;                    \
+  }
+
+  PIECE_TO_MODEL(PieceType::King, "king");
+  PIECE_TO_MODEL(PieceType::Queen, "queen");
+  PIECE_TO_MODEL(PieceType::Bishop, "bishop");
+  PIECE_TO_MODEL(PieceType::Knight, "knight");
+  PIECE_TO_MODEL(PieceType::Rook, "rook");
+  PIECE_TO_MODEL(PieceType::Pawn, "pawn");
+#undef PIECE_TO_MODEL
+
+  return {};
+}
+
 void Game::mouse_button_callback(GLFWwindow* window, int button, int action,
                                  int /*mods*/) {
   auto* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
@@ -375,21 +333,24 @@ void Game::mouse_button_callback(GLFWwindow* window, int button, int action,
       if (game->selected_tile_ != -1 && game->is_selectable_tile(tile)) {
         game->set_active_move({game->selected_tile_, tile});
       } else if (get_piece_type(piece) != PieceType::None) {
-        if (game->board_.get_records().empty()) {
+        if (game->board_.get_records().empty() && !game->ai_.is_thinking()) {
           game->ai_color_ = get_opposite_color(game->board_.get_color(tile));
           glm::vec3 position{k_camera_position};
           if (game->ai_color_ == PieceColor::White) {
             position.z = 40.0F;
+            game->ai_.think(game->board_);
             game->disable_cursor();
           } else {
             position.z = -40.0F;
           }
           game->camera_.set_position(position);
+          game->clear_selections();
         }
-        game->clear_selections();
-        game->board_.generate_legal_moves(game->selectable_tiles_, tile);
-        if (game->selectable_tiles_.size != 0) {
-          game->selected_tile_ = tile;
+        if (game->board_.get_turn() != game->ai_color_) {
+          game->board_.generate_legal_moves(game->selectable_tiles_, tile);
+          if (game->selectable_tiles_.size != 0) {
+            game->selected_tile_ = tile;
+          }
         }
       }
     } else {
