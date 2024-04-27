@@ -15,4 +15,4 @@
 #endif
 
 void log(std::string_view tag, std::string_view message,
-         std::source_location source = std::source_location::current());
+         const std::source_location& source = std::source_location::current());

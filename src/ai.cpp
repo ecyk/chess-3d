@@ -2,6 +2,8 @@
 
 #include <chrono>
 
+#include "board.hpp"
+
 void AI::think(const Board& board) {
   assert(!thinking_);
   board_ = board;
@@ -15,9 +17,9 @@ Move AI::get_best_move() {
   return best_move_;
 }
 
-void AI::run() {
-  while (true) {
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+void AI::run(const std::stop_token& stop_token) {
+  while (!stop_token.stop_requested()) {
+    std::this_thread::sleep_for(1s);
     if (thinking_ && !found_move_) {
       auto start{std::chrono::high_resolution_clock::now()};
       int score{-1000000};
@@ -97,7 +99,7 @@ int AI::quiesce(int alpha, int beta) {
   return alpha;
 }
 
-int AI::evaluate() {
+int AI::evaluate() const {
   if (board_.is_in_checkmate()) {
     return -500000;
   }
@@ -123,7 +125,7 @@ int AI::evaluate() {
   return score;
 }
 
-void AI::order_moves(Moves& moves) {
+void AI::order_moves(Moves& moves) const {
   const auto& begin{moves.data.begin()};
   // clang-format off
   std::sort(begin, begin + moves.size, [this](const Move& left, const Move& right) {

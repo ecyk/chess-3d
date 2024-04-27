@@ -2,16 +2,14 @@
 
 #include "piece.hpp"
 
-inline constexpr bool is_valid_tile(int tile) {
-  return 0 <= tile && tile <= 63;
-}
+constexpr bool is_valid_tile(int tile) { return 0 <= tile && tile <= 63; }
 
-inline constexpr int get_tile_row(int tile) {
+constexpr int get_tile_row(int tile) {
   assert(is_valid_tile(tile));
   return static_cast<uint8_t>(tile) >> 3U;
 }
 
-inline constexpr int get_tile_column(int tile) {
+constexpr int get_tile_column(int tile) {
   assert(is_valid_tile(tile));
   return static_cast<uint8_t>(tile) & 7U;
 }

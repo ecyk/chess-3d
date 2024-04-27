@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <filesystem>
 #include <glm/glm.hpp>
 #include <memory>
@@ -10,6 +11,8 @@
 #include <vector>
 
 #include "log.hpp"
+
+using namespace std::chrono_literals;
 
 struct StringHash {
   using is_transparent = void;
@@ -36,6 +39,6 @@ overload(Ts...) -> overload<Ts...>;
 // clang-format on
 
 template <typename E>
-constexpr auto to_underlying(E e) -> typename std::underlying_type<E>::type {
-  return static_cast<typename std::underlying_type<E>::type>(e);
+constexpr auto to_underlying(E e) -> std::underlying_type_t<E> {
+  return static_cast<std::underlying_type_t<E>>(e);
 }

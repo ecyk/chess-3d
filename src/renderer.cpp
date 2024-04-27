@@ -5,6 +5,7 @@
 #include <stb_image.h>
 
 #include <fstream>
+#include <ranges>
 
 Renderer::Renderer(GLFWwindow* window, const Camera& camera)
     : window_{window}, camera_{&camera} {
@@ -46,9 +47,7 @@ Renderer::Renderer(GLFWwindow* window, const Camera& camera)
   glBindTexture(GL_TEXTURE_2D, 0);
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-    // return nullptr;
-  }
+  assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
 }
 
 Renderer::~Renderer() {
@@ -62,21 +61,21 @@ Renderer::~Renderer() {
                                         GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME,
                                         &depth);
 
-  auto u_color{static_cast<GLuint>(color)};
-  auto u_depth{static_cast<GLuint>(depth)};
+  const auto u_color{static_cast<GLuint>(color)};
+  const auto u_depth{static_cast<GLuint>(depth)};
   glDeleteTextures(1, &u_color);
   glDeleteTextures(1, &u_depth);
 
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   glDeleteFramebuffers(1, &picking_fbo_);
 
-  for (const auto& [name, _] : model_map_) {
+  for (const auto& name : model_map_ | std::views::keys) {
     unload_model(name);
   }
-  for (const auto& [path, _] : texture_map_) {
+  for (const auto& path : texture_map_ | std::views::keys) {
     unload_texture(path);
   }
-  for (const auto& [name, _] : shader_map_) {
+  for (const auto& name : shader_map_ | std::views::keys) {
     unload_shader(name);
   }
 }
@@ -107,7 +106,7 @@ GLuint gl_create_shader(const char* code, GLenum type, std::string& buffer) {
   }
 
   return shader;
-};
+}
 
 struct Shader {
   GLuint vert;
@@ -135,7 +134,7 @@ GLuint gl_create_program(Shader shader, std::string& buffer) {
   }
 
   return program;
-};
+}
 
 struct Texture {
   unsigned char* data{};
@@ -197,7 +196,7 @@ GLuint gl_create_texture(const Texture& texture) {
 }  // namespace
 
 bool Renderer::load_shader(std::string name, const ShaderPath& path) {
-  assert(shader_map_.find(name) == shader_map_.end());
+  assert(!shader_map_.contains(name));
   std::string buffer;
   buffer.resize(1024);
 
@@ -218,7 +217,7 @@ bool Renderer::load_shader(std::string name, const ShaderPath& path) {
 }
 
 void Renderer::unload_shader(std::string_view name) {
-  auto it{shader_map_.find(name)};
+  const auto it{shader_map_.find(name)};
   assert(it != shader_map_.end());
   const GLuint id{it->second};
   glDeleteProgram(id);
@@ -226,10 +225,9 @@ void Renderer::unload_shader(std::string_view name) {
 }
 
 void Renderer::install_shader(std::string_view name) {
-  auto it{shader_map_.find(name)};
+  const auto it{shader_map_.find(name)};
   assert(it != shader_map_.end());
-  const GLuint id{it->second};
-  if (current_shader_ != id) {
+  if (const GLuint id = it->second; current_shader_ != id) {
     glUseProgram(id);
     current_shader_ = id;
   }
@@ -242,18 +240,18 @@ void Renderer::set_shader_uniform(std::string_view name,
   std::visit(
       overload{
           [location](float value) { glUniform1fv(location, 1, &value); },
-          [location](glm::vec2 value) { glUniform2fv(location, 1, glm::value_ptr(value)); },
-          [location](const glm::vec3& value) { glUniform3fv(location, 1, glm::value_ptr(value)); },
-          [location](const glm::vec4& value) { glUniform4fv(location, 1, glm::value_ptr(value)); },
+          [location](glm::vec2 value) { glUniform2fv(location, 1, value_ptr(value)); },
+          [location](const glm::vec3& value) { glUniform3fv(location, 1, value_ptr(value)); },
+          [location](const glm::vec4& value) { glUniform4fv(location, 1, value_ptr(value)); },
           [location](int value) { glUniform1iv(location, 1, &value); },
-          [location](const glm::mat3& value) { glUniformMatrix3fv(location, 1, GL_FALSE, glm::value_ptr(value)); },
-          [location](const glm::mat4& value) { glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(value)); }},
+          [location](const glm::mat3& value) { glUniformMatrix3fv(location, 1, GL_FALSE, value_ptr(value)); },
+          [location](const glm::mat4& value) { glUniformMatrix4fv(location, 1, GL_FALSE, value_ptr(value)); }},
       value);
   // clang-format on
 }
 
 GLuint Renderer::load_texture(const std::filesystem::path& path) {
-  if (auto it = texture_map_.find(path); it != texture_map_.end()) {
+  if (const auto it = texture_map_.find(path); it != texture_map_.end()) {
     return it->second;
   }
   const Texture texture{::load_texture(path)};
@@ -264,7 +262,7 @@ GLuint Renderer::load_texture(const std::filesystem::path& path) {
 }
 
 void Renderer::unload_texture(const std::filesystem::path& path) {
-  auto it{texture_map_.find(path)};
+  const auto it{texture_map_.find(path)};
   assert(it != texture_map_.end());
   const GLuint id{it->second};
   glDeleteTextures(1, &id);
@@ -273,7 +271,7 @@ void Renderer::unload_texture(const std::filesystem::path& path) {
 
 const Material* Renderer::load_material(const std::filesystem::path& parent,
                                         const cgltf_material* cgltf_material) {
-  if (auto it = material_map_.find(cgltf_material->name);
+  if (const auto it = material_map_.find(cgltf_material->name);
       it != material_map_.end()) {
     return &it->second;
   }
@@ -304,10 +302,10 @@ const Material* Renderer::load_material(const std::filesystem::path& parent,
 }
 
 bool Renderer::load_model(std::string name, const std::filesystem::path& path) {
-  auto it{model_map_.find(name)};
+  const auto it{model_map_.find(name)};
   assert(it == model_map_.end());
 
-  const cgltf_options options{};
+  constexpr cgltf_options options{};
   cgltf_data* data{};
   cgltf_result result{cgltf_parse_file(&options, path.string().c_str(), &data)};
   if (result != cgltf_result_success) {
@@ -381,9 +379,9 @@ bool Renderer::load_model(std::string name, const std::filesystem::path& path) {
   vertices.resize(vertex_count + position->count);
   for (size_t i = 0; i < position->count; i++, vertex_count++) {
     // clang-format off
-    cgltf_accessor_read_float(position, i, glm::value_ptr(vertices[vertex_count].position), 3);
-    cgltf_accessor_read_float(normal, i, glm::value_ptr(vertices[vertex_count].normal), 3);
-    cgltf_accessor_read_float(tex_coord, i, glm::value_ptr(vertices[vertex_count].tex_coord), 2);
+    cgltf_accessor_read_float(position, i, value_ptr(vertices[vertex_count].position), 3);
+    cgltf_accessor_read_float(normal, i, value_ptr(vertices[vertex_count].normal), 3);
+    cgltf_accessor_read_float(tex_coord, i, value_ptr(vertices[vertex_count].tex_coord), 2);
     // clang-format on
   }
 
@@ -392,6 +390,8 @@ bool Renderer::load_model(std::string name, const std::filesystem::path& path) {
     indices[i] = static_cast<unsigned int>(
         cgltf_accessor_read_index(primitive->indices, i));
   }
+
+  cgltf_free(data);
 
   GLuint vao{};
   GLuint vbo{};
@@ -428,12 +428,12 @@ bool Renderer::load_model(std::string name, const std::filesystem::path& path) {
       std::move(name),
       Model{vao, vbo, ebo, static_cast<GLsizei>(indices.size()), material0,
             material1});
-  LOGF("GL", "Model created (file: \"{}\")", path.string());
+  LOGF("GL", "Model loaded (file: \"{}\")", path.string());
   return true;
 }
 
 void Renderer::unload_model(std::string_view name) {
-  auto it{model_map_.find(name)};
+  const auto it{model_map_.find(name)};
   assert(it != model_map_.end());
   const Model& model{it->second};
   glDeleteBuffers(1, &model.vao);
@@ -444,7 +444,7 @@ void Renderer::unload_model(std::string_view name) {
 
 void Renderer::draw_model(std::string_view name, const Transform& transform,
                           bool use_alternative_material) {
-  auto it{model_map_.find(name)};
+  const auto it{model_map_.find(name)};
   assert(it != model_map_.end());
 
   const Model& model{it->second};
@@ -472,17 +472,17 @@ void Renderer::draw_model(std::string_view name, const Transform& transform,
   int height{};
   glfwGetWindowSize(window_, &width, &height);
 
-  auto fwidth{static_cast<float>(width)};
-  auto fheight{static_cast<float>(height)};
+  const auto fwidth{static_cast<float>(width)};
+  const auto fheight{static_cast<float>(height)};
   // clang-format off
   set_shader_uniform("projection", glm::perspective(glm::radians(60.0F), fwidth / fheight, 0.1F, 125.0F));
   set_shader_uniform("view", camera_->calculate_view_matrix());
-  auto model_mat{glm::scale(
-      glm::rotate(
-          glm::translate(glm::identity<glm::mat4>(), transform.position),
+  auto model_mat{scale(
+      rotate(
+          translate(glm::identity<glm::mat4>(), transform.position),
           glm::radians(transform.rotation), {0.0F, 1.0F, 0.0F}), glm::vec3{transform.scale})};
   set_shader_uniform("model", model_mat);
-  set_shader_uniform("normal_mat", glm::mat3{glm::transpose(glm::inverse(glm::mat3(model_mat)))});
+  set_shader_uniform("normal_mat", glm::mat3{transpose(inverse(glm::mat3(model_mat)))});
   // clang-format on
 
   glBindVertexArray(model.vao);
@@ -514,9 +514,9 @@ void Renderer::begin_picking(PickingMode picking_mode) {
       install_shader("picking");
       glBindFramebuffer(GL_DRAW_FRAMEBUFFER, picking_fbo_);
 
-      std::array<GLint, 4> clear_color{-1, -1, -1, -1};
+      constexpr std::array<GLint, 4> clear_color{-1, -1, -1, -1};
       glClearBufferiv(GL_COLOR, 0, clear_color.data());
-      const GLfloat clear_depth{1.0F};
+      constexpr GLfloat clear_depth{1.0F};
       glClearBufferfv(GL_DEPTH, 0, &clear_depth);
       break;
   }
@@ -562,4 +562,4 @@ void Renderer::begin_drawing(const glm::vec3& light_pos) {
   set_shader_uniform("view_pos", camera_->get_position());
 }
 
-void Renderer::end_drawing() { glfwSwapBuffers(window_); }
+void Renderer::end_drawing() const { glfwSwapBuffers(window_); }

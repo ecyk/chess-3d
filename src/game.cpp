@@ -117,8 +117,8 @@ void Game::update() {
   const glm::vec3 target{calculate_tile_position(active_move_.target)};
 
   const glm::vec3 center{(tile + target) / 2.0F};
-  const float radius{glm::length(target - tile) / 2.0F};
-  const glm::vec3 horizontal{glm::normalize(target - tile) *
+  const float radius{length(target - tile) / 2.0F};
+  const glm::vec3 horizontal{normalize(target - tile) *
                              glm::cos(glm::radians(active_move_.angle))};
 
   active_move_.position =
@@ -137,9 +137,9 @@ void Game::draw() {
   draw_selectable_tiles();
 }
 
-void Game::process_input() {
-  GLFWwindow* window = renderer_.get_window();
-  if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+void Game::process_input() const {
+  if (GLFWwindow* window = renderer_.get_window();
+      glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
     glfwSetWindowShouldClose(window, 1);
   }
 }
@@ -281,14 +281,13 @@ void Game::set_active_move(const Move& move, bool is_undo) {
 }
 
 void Game::undo() {
-  const auto& records{board_.get_records()};
-  if (!records.empty()) {
+  if (const auto& records = board_.get_records(); !records.empty()) {
     set_active_move(records.back().move, true);
     game_over_ = false;
   }
 }
 
-Transform Game::calculate_piece_transform(int tile) {
+Transform Game::calculate_piece_transform(int tile) const {
   const Piece piece{board_.get_tile(tile)};
   return calculate_tile_transform(
       tile, get_piece_color(piece) == PieceColor::White ? -180.0F : 0.0F);
@@ -333,6 +332,7 @@ void Game::mouse_button_callback(GLFWwindow* window, int button, int action,
       if (game->selected_tile_ != -1 && game->is_selectable_tile(tile)) {
         game->set_active_move({game->selected_tile_, tile});
       } else if (get_piece_type(piece) != PieceType::None) {
+        game->clear_selections();
         if (game->board_.get_records().empty() && !game->ai_.is_thinking()) {
           game->ai_color_ = get_opposite_color(game->board_.get_color(tile));
           glm::vec3 position{k_camera_position};
@@ -344,7 +344,6 @@ void Game::mouse_button_callback(GLFWwindow* window, int button, int action,
             position.z = -40.0F;
           }
           game->camera_.set_position(position);
-          game->clear_selections();
         }
         if (game->board_.get_turn() != game->ai_color_) {
           game->board_.generate_legal_moves(game->selectable_tiles_, tile);

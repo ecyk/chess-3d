@@ -22,6 +22,7 @@ Checks: '*,
     -cppcoreguidelines-pro-type-reinterpret-cast,
     -cppcoreguidelines-pro-bounds-constant-array-index,
     -misc-non-private-member-variables-in-classes,
+    -misc-include-cleaner,
 '
 WarningsAsErrors: ''
 HeaderFilterRegex: ''

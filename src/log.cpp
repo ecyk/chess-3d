@@ -5,7 +5,7 @@
 #include <iostream>
 
 void log(std::string_view tag, std::string_view message,
-         std::source_location source) {
+         const std::source_location& source) {
   std::cerr
       << std::format(
              "[{:%F %T}] - [{}] {} ({}:{}:{})",

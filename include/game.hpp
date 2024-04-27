@@ -26,7 +26,7 @@ class Game {
   void update();
   void draw();
 
-  void process_input();
+  void process_input() const;
 
   void draw_picking_texture();
   void draw_pieces();
@@ -82,7 +82,7 @@ class Game {
 
   bool game_over_{};
 
-  Transform calculate_piece_transform(int tile);
+  Transform calculate_piece_transform(int tile) const;
   static glm::vec3 calculate_tile_position(int tile);
   static Transform calculate_tile_transform(int tile, float rotation = 0.0F);
   static std::string_view get_model_name(Piece piece);

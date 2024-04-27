@@ -43,8 +43,7 @@ void gl_callback_pre(const char* name, GLADapiproc apiproc, int /*len_args*/,
 
 void gl_callback_post(void* /*ret*/, const char* name, GLADapiproc /*apiproc*/,
                       int /*len_args*/, ...) {
-  GLenum error_code = glad_glGetError();
-  if (error_code != GL_NO_ERROR) {
+  if (GLenum error_code = glad_glGetError(); error_code != GL_NO_ERROR) {
     LOGF("GL", "Error in {} ({})", name, error_code);
   }
 }
@@ -93,8 +92,7 @@ GLFWwindow* glfw_init() {
   gladSetGLPreCallback(gl_callback_pre);
   gladSetGLPostCallback(gl_callback_post);
 
-  const int version{gladLoadGL(glfwGetProcAddress)};
-  if (version == 0) {
+  if (const int version = gladLoadGL(glfwGetProcAddress); version == 0) {
     LOG("GLFW", "Failed to load GL");
     glfw_destroy();
     return nullptr;

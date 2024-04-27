@@ -67,7 +67,7 @@ class Renderer {
   void draw_model(std::string_view name, const Transform& transform,
                   bool use_alternative_material = false);
 
-  enum class PickingMode { Read, Write };
+  enum class PickingMode : uint8_t { Read, Write };
 
   void begin_picking(PickingMode picking_mode);
   static void end_picking(PickingMode picking_mode);
@@ -79,7 +79,7 @@ class Renderer {
                           float thickness, const glm::vec4& color);
 
   void begin_drawing(const glm::vec3& light_pos);
-  void end_drawing();
+  void end_drawing() const;
 
   [[nodiscard]] GLFWwindow* get_window() const { return window_; }
 

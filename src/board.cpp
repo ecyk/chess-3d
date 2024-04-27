@@ -71,7 +71,7 @@ void Board::generate_legal_moves(Moves& moves, int tile, bool only_captures) {
   if (turn_ != get_color(tile)) {
     return;
   }
-  auto check_king = [this]() {
+  auto check_king = [this] {
     return is_threatened(
         king_tiles_[get_color_index(get_opposite_color(turn_))], turn_);
   };
@@ -147,6 +147,7 @@ void Board::load_fen(std::string_view fen) {
     switch (ch) {
       case 'K':
         king_tiles_[1] = tile_rot;
+        [[fallthrough]];
       case 'k':
         type = PieceType::King;
         if (ch == 'K') {
@@ -217,7 +218,7 @@ void Board::load_fen(std::string_view fen) {
   if (parts[3] != "-") {
     enpassant_tile_ = 8 * (parts[3][1] - '0' - 1) + (parts[3][0] - 'a');
   }
-};
+}
 
 void Board::move(Move move) {
   assert(get_color(move.tile) != PieceColor::None &&
@@ -297,7 +298,7 @@ void Board::move(Move move) {
       } else if (move.promotion != PieceType::None) {
         set_tile(move.target,
                  make_piece(get_color(move.target), move.promotion));
-      };
+      }
       break;
     default:
       break;
