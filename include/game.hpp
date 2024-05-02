@@ -11,8 +11,9 @@ inline constexpr glm::vec2 k_window_size{1280.0F, 720.0F};
 
 class Game {
   static constexpr float k_game_scale{10.0F};
-  static constexpr glm::vec3 k_camera_position{0.0F, 40.0F, -40.0F};
-  static constexpr glm::vec3 k_camera_target{};
+  static constexpr float k_ms_per_update{1.0F / 60.0F};
+  static constexpr glm::vec3 k_camera_initial_position{0.05F, 56.0F, 0.0F};
+  static constexpr glm::vec3 k_camera_side_position{0.0F, 40.0F, -40.0F};
   static constexpr glm::vec4 k_picking_outline_color{0.0F, 1.0F, 0.0F, 1.0F};
   static constexpr glm::vec4 k_check_outline_color{1.0F, 0.0F, 0.0F, 1.0F};
   static constexpr glm::vec3 k_light_position{0.0F, 40.0F, 0.0F};
@@ -49,9 +50,13 @@ class Game {
   void enable_cursor() { glfwSetInputMode(renderer_.get_window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL); mouse_last_position_ = mouse_last_position_real_; }
   void disable_cursor() { glfwSetInputMode(renderer_.get_window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED); mouse_last_position_real_ = mouse_last_position_; }
   void clear_selections() { selectable_tiles_ = {}; selected_tile_ = -1; }
-  // clang-format on
 
-  Camera camera_{k_camera_position, k_camera_target};
+  void process_camera_movement();
+  void set_camera_target_position(const glm::vec3& position) { camera_target_position_ = position; is_camera_moving_ = true; }
+  // clang-format on
+  Camera camera_{k_camera_initial_position, {}};
+  glm::vec3 camera_target_position_{};
+  bool is_camera_moving_{};
 
   glm::vec2 mouse_last_position_{k_window_size / 2.0F};
   glm::vec2 mouse_last_position_real_{mouse_last_position_};
@@ -72,6 +77,7 @@ class Game {
     bool is_completed{};
   };
 
+  void process_active_move();
   void set_active_move(const Move& move, bool is_undo = false);
   void undo();
 

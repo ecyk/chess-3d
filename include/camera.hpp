@@ -18,15 +18,13 @@ class Camera {
   [[nodiscard]] const glm::vec3& get_position() const { return position_; }
   void set_position(const glm::vec3& position) { position_ = position; }
 
- private:
-  [[nodiscard]] glm::vec3 calculate_forward() const {
-    return glm::normalize(target_ - position_);
-  }
-  [[nodiscard]] glm::vec3 calculate_up() const { return glm::normalize(up_); }
-  [[nodiscard]] glm::vec3 calculate_right() const {
-    return glm::cross(calculate_forward(), calculate_up());
-  }
+  // clang-format off
+  [[nodiscard]] glm::vec3 calculate_forward() const { return normalize(target_ - position_); }
+  [[nodiscard]] glm::vec3 calculate_up() const { return normalize(up_); }
+  [[nodiscard]] glm::vec3 calculate_right() const { return normalize(cross(calculate_forward(), calculate_up())); }
+  // clang-format on
 
+ private:
   glm::vec3 position_;
   glm::vec3 target_;
   glm::vec3 up_{0.0F, 1.0F, 0.0F};

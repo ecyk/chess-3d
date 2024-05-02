@@ -1,6 +1,7 @@
 #include "game.hpp"
 
 #include <algorithm>
+#include <random>
 
 #define SHADER(filename) "resources/shaders/" filename
 #define MODEL(filename) "resources/models/" filename
@@ -14,6 +15,15 @@ Game::Game(GLFWwindow* window) : renderer_{window, camera_} {
 
   glfwSetKeyCallback(window, key_callback);
 
+  glm::vec3 target_position{k_camera_side_position};
+  auto dev{std::random_device{}};
+  auto gen{std::mt19937{dev()}};
+  if (auto dist = std::uniform_int_distribution{0, 1}; dist(gen) != 0) {
+    target_position.z = 40.0F;
+  }
+  set_camera_target_position(target_position);
+
+  is_camera_moving_ = false;
   active_move_.is_completed = true;
 }
 
@@ -38,16 +48,21 @@ void Game::run() {
   CHECK(renderer_.load_model("tile", MODEL("tile.gltf")))
 #undef CHECK
 
+  float lag{};
   last_frame_ = static_cast<float>(glfwGetTime());
   while (glfwWindowShouldClose(renderer_.get_window()) != 1) {
     const auto current_frame = static_cast<float>(glfwGetTime());
     delta_time_ = current_frame - last_frame_;
     last_frame_ = current_frame;
+    lag += delta_time_;
 
     glfwPollEvents();
 
     process_input();
-    update();
+    while (lag >= k_ms_per_update) {
+      update();
+      lag -= k_ms_per_update;
+    }
 
     draw_picking_texture();
     renderer_.begin_drawing(k_light_position);
@@ -57,6 +72,8 @@ void Game::run() {
 }
 
 void Game::update() {
+  process_camera_movement();
+
   if (game_over_ || ai_.is_thinking()) {
     return;
   }
@@ -65,70 +82,7 @@ void Game::update() {
     set_active_move(ai_.get_best_move());
   }
 
-  if (active_move_.is_completed) {
-    if (board_.is_in_checkmate()) {
-      LOGF("GAME", "{} won!",
-           board_.get_turn() == PieceColor::White ? "Black" : "White");
-    }
-    if (board_.is_in_draw()) {
-      LOG("GAME", "Draw!");
-    }
-    if (board_.is_in_checkmate() || board_.is_in_draw()) {
-      enable_cursor();
-      game_over_ = true;
-      return;
-    }
-
-    if (board_.get_turn() == ai_color_) {
-      if (active_move_.is_undo) {
-        undo();
-        return;
-      }
-
-      ai_.think(board_);
-    }
-    return;
-  }
-
-  if (active_move_.angle <= 0.0F) {
-    if (active_move_.is_undo) {
-      board_.undo();
-      if (board_.get_records().empty()) {
-        active_move_ = {};
-        ai_color_ = PieceColor::None;
-      }
-    } else {
-      PieceType promotion{};
-      if (board_.get_type(active_move_.tile) == PieceType::Pawn &&
-          (active_move_.target < 8 || active_move_.target > 55)) {
-        promotion = PieceType::Queen;
-      }
-      board_.make_move({active_move_.tile, active_move_.target, promotion});
-    }
-    active_move_.angle = 0.0F;
-    active_move_.is_completed = true;
-    if (!is_controlling_camera() && board_.get_turn() != ai_color_) {
-      enable_cursor();
-    }
-    return;
-  }
-
-  const glm::vec3 tile{calculate_tile_position(active_move_.tile)};
-  const glm::vec3 target{calculate_tile_position(active_move_.target)};
-
-  const glm::vec3 center{(tile + target) / 2.0F};
-  const float radius{length(target - tile) / 2.0F};
-  const glm::vec3 horizontal{normalize(target - tile) *
-                             glm::cos(glm::radians(active_move_.angle))};
-
-  active_move_.position =
-      center + glm::vec3{horizontal.x,
-                         glm::sin(glm::radians(active_move_.angle)),
-                         horizontal.z} *
-                   radius;
-
-  active_move_.angle -= 270.0F * delta_time_;
-  active_move_.angle = glm::clamp(active_move_.angle, 0.0F, 180.0F);
+  process_active_move();
 }
 
 void Game::draw() {
@@ -262,12 +216,112 @@ void Game::draw_selectable_tiles() {
   glDisable(GL_BLEND);
 }
 
+void Game::process_camera_movement() {
+  static float camera_movement_counter{0.5F};
+  static bool delay_camera_movement{true};
+
+  if (delay_camera_movement &&
+      (camera_movement_counter -= k_ms_per_update) < 0) {
+    is_camera_moving_ = true;
+    delay_camera_movement = false;
+  }
+
+  if (is_camera_moving_) {
+    auto target_position{camera_target_position_};
+    target_position.x *= -1;
+    target_position.z *= -1;
+    const glm::vec3 direction{
+        normalize(target_position - camera_.get_position())};
+    float yaw{
+        glm::degrees(std::atan2(dot(direction, camera_.calculate_right()),
+                                dot(direction, camera_.calculate_forward())))};
+    yaw *= 50.0F * k_ms_per_update;
+    float pitch{
+        glm::degrees(std::asin(dot(direction, camera_.calculate_up())))};
+    pitch *= 50.0F * k_ms_per_update;
+
+    if (glm::abs(yaw) < 0.5F && glm::abs(pitch) < 0.5F) {
+      is_camera_moving_ = false;
+      return;
+    }
+
+    camera_.process_mouse_movement(yaw, -pitch);
+  }
+}
+
 bool Game::is_selectable_tile(int tile) const {
   const auto begin{selectable_tiles_.data.begin()};
   const auto end{begin + selectable_tiles_.size};
   return std::find_if(begin, end, [tile](const Move& move) {
            return move.target == tile;
          }) != end;
+}
+
+void Game::process_active_move() {
+  if (active_move_.is_completed) {
+    if (board_.is_in_checkmate()) {
+      LOGF("GAME", "{} won!",
+           board_.get_turn() == PieceColor::White ? "Black" : "White");
+    }
+    if (board_.is_in_draw()) {
+      LOG("GAME", "Draw!");
+    }
+    if (board_.is_in_checkmate() || board_.is_in_draw()) {
+      enable_cursor();
+      game_over_ = true;
+      return;
+    }
+
+    if (board_.get_turn() == ai_color_) {
+      if (active_move_.is_undo) {
+        undo();
+        return;
+      }
+
+      ai_.think(board_);
+    }
+    return;
+  }
+
+  if (active_move_.angle <= 0.0F) {
+    if (active_move_.is_undo) {
+      board_.undo();
+      if (board_.get_records().empty()) {
+        active_move_ = {};
+        ai_color_ = PieceColor::None;
+      }
+    } else {
+      PieceType promotion{};
+      if (board_.get_type(active_move_.tile) == PieceType::Pawn &&
+          (active_move_.target < 8 || active_move_.target > 55)) {
+        promotion = PieceType::Queen;
+      }
+      board_.make_move({active_move_.tile, active_move_.target, promotion});
+    }
+    active_move_.angle = 0.0F;
+    active_move_.is_completed = true;
+    if (!is_controlling_camera() && board_.get_turn() != ai_color_) {
+      enable_cursor();
+    }
+    return;
+  }
+
+  const glm::vec3 tile{calculate_tile_position(active_move_.tile)};
+  const glm::vec3 target{calculate_tile_position(active_move_.target)};
+
+  const glm::vec3 center{(tile + target) / 2.0F};
+  const float radius{length(target - tile) / 2.0F};
+  const glm::vec3 horizontal{normalize(target - tile) *
+                             glm::cos(glm::radians(active_move_.angle))};
+
+  active_move_.position =
+      center + glm::vec3{horizontal.x,
+                         glm::sin(glm::radians(active_move_.angle)),
+                         horizontal.z} *
+                   radius;
+
+  active_move_.angle -= 270.0F * k_ms_per_update;
+  active_move_.angle = glm::clamp(active_move_.angle, 0.0F, 180.0F);
 }
 
 void Game::set_active_move(const Move& move, bool is_undo) {
@@ -335,7 +389,7 @@ void Game::mouse_button_callback(GLFWwindow* window, int button, int action,
         game->clear_selections();
         if (game->board_.get_records().empty() && !game->ai_.is_thinking()) {
           game->ai_color_ = get_opposite_color(game->board_.get_color(tile));
-          glm::vec3 position{k_camera_position};
+          glm::vec3 position{k_camera_side_position};
           if (game->ai_color_ == PieceColor::White) {
             position.z = 40.0F;
             game->ai_.think(game->board_);
@@ -343,7 +397,7 @@ void Game::mouse_button_callback(GLFWwindow* window, int button, int action,
           } else {
             position.z = -40.0F;
           }
-          game->camera_.set_position(position);
+          game->set_camera_target_position(position);
         }
         if (game->board_.get_turn() != game->ai_color_) {
           game->board_.generate_legal_moves(game->selectable_tiles_, tile);
@@ -357,7 +411,9 @@ void Game::mouse_button_callback(GLFWwindow* window, int button, int action,
     }
   }
 
-  if (button == GLFW_MOUSE_BUTTON_MIDDLE && action == GLFW_RELEASE) {
+  if (game->board_.get_turn() != game->ai_color_ &&
+      game->active_move_.is_completed && button == GLFW_MOUSE_BUTTON_MIDDLE &&
+      action == GLFW_RELEASE) {
     game->enable_cursor();
   }
 }
@@ -396,18 +452,17 @@ void Game::key_callback(GLFWwindow* window, int key, int /*scancode*/,
   auto* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
   if (key == GLFW_KEY_F && action == GLFW_PRESS) {
     if (game->is_fullscreen) {
-      glfwSetWindowMonitor(window, nullptr, game->window_old_pos_.x,
-                           game->window_old_pos_.y, game->window_old_size_.x,
-                           game->window_old_size_.y, 0);
+      // clang-format off
+      glfwSetWindowMonitor(window, nullptr, game->window_old_pos_.x, game->window_old_pos_.y, game->window_old_size_.x, game->window_old_size_.y, 0);
       game->is_fullscreen = false;
     } else {
-      glfwGetWindowPos(window, &game->window_old_pos_.x,
-                       &game->window_old_pos_.y);
-      glfwGetWindowSize(window, &game->window_old_size_.x,
-                        &game->window_old_size_.y);
+      glfwGetWindowPos(window, &game->window_old_pos_.x, &game->window_old_pos_.y);
+      glfwGetWindowSize(window, &game->window_old_size_.x, &game->window_old_size_.y);
+      // clang-format on
       GLFWmonitor* monitor = glfwGetPrimaryMonitor();
       const GLFWvidmode* mode = glfwGetVideoMode(monitor);
       glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, 0);
+      glfwSwapInterval(1);
       game->is_fullscreen = true;
     }
     return;
