@@ -114,15 +114,32 @@ int AI::evaluate() const {
     if (board_.is_empty(tile)) {
       continue;
     }
+    const PieceColor color = board_.get_color(tile);
+    const int side{board_.get_turn() == color ? 1 : -1};
 
-    const PieceType type{board_.get_type(tile)};
-    if (board_.get_turn() == board_.get_color(tile)) {
-      score += get_piece_value(type);
-    } else {
-      score -= get_piece_value(type);
+#define CASE_PIECE(type, table)                                            \
+  case PieceType::type:                                                    \
+    score += get_piece_value(PieceType::type) * side;                      \
+    score +=                                                               \
+        (table)[color == PieceColor::White                                 \
+                    ? 8 * (7 - get_tile_row(tile)) + get_tile_column(tile) \
+                    : tile] *                                              \
+        side;                                                              \
+    break;
+
+    switch (board_.get_type(tile)) {
+      case PieceType::None:
+        assert(false);
+        break;
+        CASE_PIECE(King, k_king_table)
+        CASE_PIECE(Queen, k_queen_table)
+        CASE_PIECE(Bishop, k_bishop_table)
+        CASE_PIECE(Knight, k_knight_table)
+        CASE_PIECE(Rook, k_rook_table)
+        CASE_PIECE(Pawn, k_pawn_table)
     }
+#undef CASE_PIECE
   }
-
   return score;
 }
 

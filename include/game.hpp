@@ -13,7 +13,8 @@ class Game {
   static constexpr float k_game_scale{10.0F};
   static constexpr float k_ms_per_update{1.0F / 60.0F};
   static constexpr glm::vec3 k_camera_initial_position{0.05F, 56.0F, 0.0F};
-  static constexpr glm::vec3 k_camera_side_position{0.0F, 40.0F, -40.0F};
+  static constexpr glm::vec3 k_camera_w_side_position{0.0F, 40.0F, 40.0F};
+  static constexpr glm::vec3 k_camera_b_side_position{0.0F, 40.0F, -40.0F};
   static constexpr glm::vec4 k_picking_outline_color{0.0F, 1.0F, 0.0F, 1.0F};
   static constexpr glm::vec4 k_check_outline_color{1.0F, 0.0F, 0.0F, 1.0F};
   static constexpr glm::vec3 k_light_position{0.0F, 40.0F, 0.0F};
@@ -53,6 +54,8 @@ class Game {
 
   void process_camera_movement();
   void set_camera_target_position(const glm::vec3& position) { camera_target_position_ = position; is_camera_moving_ = true; }
+  glm::vec3 get_player_camera_target_position() const { return ai_color_ == PieceColor::Black ? k_camera_b_side_position : k_camera_w_side_position; }
+  glm::vec3 get_ai_camera_target_position() const { return ai_color_ == PieceColor::White ? k_camera_w_side_position : k_camera_b_side_position; }
   // clang-format on
   Camera camera_{k_camera_initial_position, {}};
   glm::vec3 camera_target_position_{};
@@ -82,6 +85,8 @@ class Game {
   void undo();
 
   ActiveMove active_move_;
+
+  bool is_ai_turn() const { return board_.get_turn() == ai_color_; }
 
   AI ai_;
   PieceColor ai_color_{};

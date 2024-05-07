@@ -15,13 +15,13 @@ Game::Game(GLFWwindow* window) : renderer_{window, camera_} {
 
   glfwSetKeyCallback(window, key_callback);
 
-  glm::vec3 target_position{k_camera_side_position};
+  glm::vec3 camera_target_position{k_camera_w_side_position};
   auto dev{std::random_device{}};
   auto gen{std::mt19937{dev()}};
   if (auto dist = std::uniform_int_distribution{0, 1}; dist(gen) != 0) {
-    target_position.z = 40.0F;
+    camera_target_position = k_camera_b_side_position;
   }
-  set_camera_target_position(target_position);
+  set_camera_target_position(camera_target_position);
 
   is_camera_moving_ = false;
   active_move_.is_completed = true;
@@ -186,7 +186,11 @@ void Game::draw_pieces() {
           outline_king) {
         outline_color = k_check_outline_color;
       }
-      renderer_.draw_model_outline(model_name, transform, 0.0125F,
+      float thickness{0.0125F};
+      if (outline_hover && is_selectable_tile(tile)) {
+        thickness *= 2;
+      }
+      renderer_.draw_model_outline(model_name, transform, thickness,
                                    outline_color);
       renderer_.install_shader("lighting");
     }
@@ -217,13 +221,12 @@ void Game::draw_selectable_tiles() {
 }
 
 void Game::process_camera_movement() {
-  static float camera_movement_counter{0.5F};
-  static bool delay_camera_movement{true};
+  static float timer{0.5F};
+  static bool delay{true};
 
-  if (delay_camera_movement &&
-      (camera_movement_counter -= k_ms_per_update) < 0) {
+  if (delay && (timer -= k_ms_per_update) < 0) {
     is_camera_moving_ = true;
-    delay_camera_movement = false;
+    delay = false;
   }
 
   if (is_camera_moving_) {
@@ -272,7 +275,7 @@ void Game::process_active_move() {
       return;
     }
 
-    if (board_.get_turn() == ai_color_) {
+    if (is_ai_turn()) {
       if (active_move_.is_undo) {
         undo();
         return;
@@ -300,7 +303,7 @@ void Game::process_active_move() {
     }
     active_move_.angle = 0.0F;
     active_move_.is_completed = true;
-    if (!is_controlling_camera() && board_.get_turn() != ai_color_) {
+    if (!is_controlling_camera() && !is_ai_turn()) {
       enable_cursor();
     }
     return;
@@ -389,17 +392,14 @@ void Game::mouse_button_callback(GLFWwindow* window, int button, int action,
         game->clear_selections();
         if (game->board_.get_records().empty() && !game->ai_.is_thinking()) {
           game->ai_color_ = get_opposite_color(game->board_.get_color(tile));
-          glm::vec3 position{k_camera_side_position};
           if (game->ai_color_ == PieceColor::White) {
-            position.z = 40.0F;
             game->ai_.think(game->board_);
             game->disable_cursor();
-          } else {
-            position.z = -40.0F;
           }
-          game->set_camera_target_position(position);
+          game->set_camera_target_position(
+              game->get_ai_camera_target_position());
         }
-        if (game->board_.get_turn() != game->ai_color_) {
+        if (!game->is_ai_turn()) {
           game->board_.generate_legal_moves(game->selectable_tiles_, tile);
           if (game->selectable_tiles_.size != 0) {
             game->selected_tile_ = tile;
@@ -411,9 +411,8 @@ void Game::mouse_button_callback(GLFWwindow* window, int button, int action,
     }
   }
 
-  if (game->board_.get_turn() != game->ai_color_ &&
-      game->active_move_.is_completed && button == GLFW_MOUSE_BUTTON_MIDDLE &&
-      action == GLFW_RELEASE) {
+  if (!game->is_ai_turn() && game->active_move_.is_completed &&
+      button == GLFW_MOUSE_BUTTON_MIDDLE && action == GLFW_RELEASE) {
     game->enable_cursor();
   }
 }
@@ -467,8 +466,11 @@ void Game::key_callback(GLFWwindow* window, int key, int /*scancode*/,
     }
     return;
   }
-  if (!game->active_move_.is_completed ||
-      game->board_.get_turn() == game->ai_color_) {
+  if (key == GLFW_KEY_C && action == GLFW_PRESS && !game->is_camera_moving_) {
+    game->set_camera_target_position(game->get_player_camera_target_position());
+    return;
+  }
+  if (!game->active_move_.is_completed || game->is_ai_turn()) {
     return;
   }
   if (key == GLFW_KEY_U && action == GLFW_PRESS) {
