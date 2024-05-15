@@ -76,7 +76,7 @@ class AI {
 
  public:
   AI() : worker_{std::bind_front(&AI::run, this)} {
-    LOGF("AI", "Thread started");
+    LOG("AI", "Thread started");
   }
 
   void think(const Board& board);

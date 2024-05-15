@@ -37,7 +37,7 @@ void AI::run(const std::stop_token& stop_token) {
       found_move_ = true;
     }
   }
-  LOGF("AI", "Thread stopped");
+  LOG("AI", "Thread stopped");
 }
 
 int AI::search(int depth, int alpha, int beta) {
